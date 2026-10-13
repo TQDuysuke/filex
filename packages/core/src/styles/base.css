@@ -5739,14 +5739,14 @@ filex-explorer {
 /* ── the storage line ─────────────────────────────────────────────────── */
 .fe-sidenav__quota {
   flex: 0 0 auto;
-  padding: 10px 12px 12px;
+  padding: 8px 12px 10px;
   border-top: 1px solid var(--fe-border);
 }
 .fe-sidenav--rail .fe-sidenav__quota {
-  padding: 10px 8px;
+  padding: 8px;
 }
 .fe-sidenav__quota-label {
-  margin: 0 0 6px;
+  margin: 0 0 3px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -5754,7 +5754,7 @@ filex-explorer {
   color: var(--fe-text-muted);
 }
 .fe-sidenav__quota-bar {
-  height: 5px;
+  height: 4px;
   border-radius: 999px;
   background: var(--fe-bg-hover);
   overflow: hidden;
@@ -5767,28 +5767,44 @@ filex-explorer {
   transition: width 0.2s ease;
 }
 .fe-sidenav__quota-text {
-  margin: 6px 0 0;
-  font-size: 12px;
+  margin: 3px 0 0;
+  font-size: 11px;
   color: var(--fe-text-muted);
 }
 
 /* ── per-storage usage progress bar in SideNav ────────────────────────── */
+.fe-sidenav__item--storage {
+  height: auto !important;
+  min-height: var(--fe-h-md);
+  padding-top: 5px !important;
+  padding-bottom: 5px !important;
+  align-items: flex-start !important;
+}
+.fe-sidenav__item--storage .fe-ficon {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
 .fe-sidenav__storage-info {
   display: flex;
   flex-direction: column;
   min-width: 0;
   flex: 1 1 auto;
+  gap: 2px;
 }
 .fe-sidenav__storage-title-row {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
+  line-height: 1.25;
 }
 .fe-sidenav__storage-usage {
-  margin-top: 4px;
+  margin-top: 2px;
   min-width: 0;
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 .fe-sidenav__storage-bar {
   height: 4px;
@@ -5817,7 +5833,7 @@ filex-explorer {
   align-items: center;
   justify-content: space-between;
   gap: 4px;
-  margin-top: 2px;
+  margin-top: 0;
   font-size: 11px;
   line-height: 1.2;
   color: var(--fe-text-muted);
@@ -6716,7 +6732,7 @@ filex-explorer {
   background: var(--fe-bg-elev);
 }
 .fe-sidenav__quota-label {
-  margin: 0 0 6px;
+  margin: 0 0 3px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: normal;
@@ -6724,7 +6740,7 @@ filex-explorer {
   color: var(--fe-text-muted);
 }
 .fe-sidenav__quota-text {
-  margin: 6px 0 0;
+  margin: 3px 0 0;
   font-size: 11px;
   color: var(--fe-text-muted);
 }

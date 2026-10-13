@@ -7,7 +7,20 @@
 // address this app builds for the browser: `/filex/s/<token>`, not `/s/…`.
 import { appBase, shareHref } from '@brftech/filex-core';
 
+export function dynamicShareUrl(urlOrToken?: string | null): string {
+  if (!urlOrToken) return '';
+  if (typeof window === 'undefined') return urlOrToken;
+  try {
+    if (urlOrToken.startsWith('http://') || urlOrToken.startsWith('https://')) {
+      const u = new URL(urlOrToken);
+      return `${window.location.origin}${u.pathname}${u.search}${u.hash}`;
+    }
+  } catch {}
+  return fallbackShareUrl(urlOrToken);
+}
+
 export function fallbackShareUrl(token: string): string {
   const path = shareHref(token, appBase());
   return typeof window === 'undefined' ? path : `${window.location.origin}${path}`;
 }
+

@@ -34,7 +34,7 @@ import type { PaginatedResponse, Share } from '@/api/types';
 import { useToastStore } from '@/stores/toast';
 import { extractError } from '@/api/client';
 import { copyText } from '@/lib/clipboard';
-import { fallbackShareUrl } from '@/lib/shareLink';
+import { dynamicShareUrl, fallbackShareUrl } from '@/lib/shareLink';
 import { formatDate } from '@/lib/format';
 
 import Button from '@/components/ui/Button.vue';
@@ -148,7 +148,7 @@ async function remove() {
 // through a proxy: they copied a link nobody else could open (issue #32).
 // The origin fallback remains only for a server too old to send `url`.
 function shareUrl(s: Share): string {
-  if (s.url) return s.url;
+  if (s.url) return dynamicShareUrl(s.url);
   return fallbackShareUrl(s.token);
 }
 

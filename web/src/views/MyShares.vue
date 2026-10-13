@@ -43,7 +43,7 @@ import type { PaginatedResponse, Share, ShareState } from '@/api/types';
 import { extractError } from '@/api/client';
 import { useToastStore } from '@/stores/toast';
 import { copyText } from '@/lib/clipboard';
-import { fallbackShareUrl } from '@/lib/shareLink';
+import { dynamicShareUrl, fallbackShareUrl } from '@/lib/shareLink';
 
 import Badge from '@/components/ui/Badge.vue';
 import DateWithDistance from '@/components/DateWithDistance.vue';
@@ -89,7 +89,7 @@ function shareOf(row: MyShareRow): Share {
 
 /** The recipient's link, as the SERVER built it from its public origin. */
 function linkOf(row: MyShareRow): string {
-  if (row.url) return row.url;
+  if (row.url) return dynamicShareUrl(row.url);
   // Only reachable against a server older than this endpoint, which cannot
   // happen for a page the same binary serves. Kept so a missing `url` degrades
   // to something openable instead of "undefined".

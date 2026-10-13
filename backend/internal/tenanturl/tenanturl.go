@@ -91,25 +91,87 @@ func (rv Resolver) Fallback() string {
 
 // FromRequest returns the origin for a URL minted while r is being served.
 //
-// Single-tenant: PublicURL, and r is not read — see the MultiTenant field.
-// Multi-tenant: the request's Host when (and only when) it resolves to an
-// enabled provider row; anything else falls back to PublicURL.
+// In multi-tenant mode, it resolves the host against enabled provider rows.
+// In single-tenant mode, it dynamically derives the origin from the request r
+// (Host or X-Forwarded-Host, and scheme from X-Forwarded-Proto / TLS / CF-Visitor),
+// ensuring share links dynamically start with the client's access domain.
+// When r is nil or has no host, it falls back to PublicURL.
 func (rv Resolver) FromRequest(r *http.Request) string {
-	if !rv.MultiTenant || rv.Store == nil || r == nil {
+	if r == nil {
 		return rv.Fallback()
 	}
-	host := RequestHost(r)
+	if rv.MultiTenant {
+		if rv.Store == nil {
+			return rv.Fallback()
+		}
+		host := RequestHost(r)
+		if host == "" {
+			return rv.Fallback()
+		}
+		p, err := rv.Store.GetProviderByHost(r.Context(), host)
+		if err != nil || p == nil {
+			return rv.Fallback()
+		}
+		if a := rv.addressOf(r.Context(), p, host); a != "" {
+			return rv.origin(a, rv.scheme(r))
+		}
+		return rv.Fallback()
+	}
+	return rv.DynamicRequestOrigin(r)
+}
+
+// DynamicRequestOrigin builds the origin string ("https://host:port" or "http://host:port")
+// from the incoming request r.
+func (rv Resolver) DynamicRequestOrigin(r *http.Request) string {
+	if r == nil {
+		return rv.Fallback()
+	}
+	host := r.Host
+	if xfh := r.Header.Get("X-Forwarded-Host"); xfh != "" {
+		parts := strings.Split(xfh, ",")
+		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			host = strings.TrimSpace(parts[0])
+		}
+	}
 	if host == "" {
 		return rv.Fallback()
 	}
-	p, err := rv.Store.GetProviderByHost(r.Context(), host)
-	if err != nil || p == nil {
-		return rv.Fallback()
+
+	scheme := ""
+	if proto := r.Header.Get("X-Forwarded-Proto"); proto != "" {
+		parts := strings.Split(proto, ",")
+		if len(parts) > 0 && strings.TrimSpace(parts[0]) != "" {
+			scheme = strings.ToLower(strings.TrimSpace(parts[0]))
+		}
+	} else if cf := r.Header.Get("CF-Visitor"); strings.Contains(cf, `"https"`) {
+		scheme = "https"
+	} else if r.TLS != nil {
+		scheme = "https"
+	} else {
+		pubHost := ""
+		if u, err := url.Parse(rv.Fallback()); err == nil {
+			pubHost = strings.ToLower(u.Host)
+		}
+		cleanHost := strings.ToLower(host)
+		if pubHost != "" && (cleanHost == pubHost || strings.HasPrefix(cleanHost, pubHost+":")) {
+			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(rv.PublicURL)), "https://") {
+				scheme = "https"
+			} else {
+				scheme = "http"
+			}
+		} else {
+			scheme = "http"
+		}
 	}
-	if a := rv.addressOf(r.Context(), p, host); a != "" {
-		return rv.origin(a, rv.scheme(r))
+
+	host = strings.ToLower(strings.TrimRight(host, "/"))
+	if scheme == "http" && strings.HasSuffix(host, ":80") {
+		host = strings.TrimSuffix(host, ":80")
+	} else if scheme == "https" && strings.HasSuffix(host, ":443") {
+		host = strings.TrimSuffix(host, ":443")
 	}
-	return rv.Fallback()
+
+	return scheme + "://" + host + rv.basePath()
 }
 
 // ForProvider returns a tenant's origin without a request — for the e-mails

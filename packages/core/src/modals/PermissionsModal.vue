@@ -432,10 +432,30 @@ async function reload() {
     loading.value = false;
   }
 }
+function toClientUrl(url?: string | null, token?: string, kind: 's' | 'd' = 's'): string {
+  if (typeof window !== 'undefined') {
+    if (url) {
+      try {
+        if (url.startsWith('http://') || url.startsWith('https://')) {
+          const u = new URL(url);
+          return `${window.location.origin}${u.pathname}${u.search}${u.hash}`;
+        }
+      } catch {}
+    }
+    if (token) {
+      return `${window.location.origin}/${kind}/${token}`;
+    }
+  }
+  return url || '';
+}
+
 async function reloadShares() {
   try {
     const r = await props.api.listShares(props.path);
-    shares.value = r.shares ?? [];
+    shares.value = (r.shares ?? []).map((s: any) => ({
+      ...s,
+      url: toClientUrl(s.url, s.token ?? s.uuid, s.kind === 'drop' ? 'd' : 's'),
+    }));
   } catch {
     shares.value = [];
   }
@@ -724,7 +744,7 @@ async function createLink() {
     shareResult.value = {
       // The create answer's `uuid` IS the token (share.go shareCreateRespInner).
       token: r.share.token ?? r.share.uuid,
-      url: r.share.url,
+      url: toClientUrl(r.share.url, r.share.token ?? r.share.uuid, 's'),
       pin: r.share.password_pin ?? null,
       expiresAt: r.share.expires_at ?? null,
       clamped: !!r.share.expiry_clamped,
@@ -909,7 +929,7 @@ async function createDropLink() {
     });
     dropResult.value = {
       token: r.share.token ?? r.share.uuid,
-      url: r.share.url,
+      url: toClientUrl(r.share.url, r.share.token ?? r.share.uuid, 'd'),
       pin: r.share.password_pin ?? null,
       expiresAt: r.share.expires_at ?? null,
       clamped: !!r.share.expiry_clamped,
