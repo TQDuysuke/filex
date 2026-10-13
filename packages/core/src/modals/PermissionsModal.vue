@@ -298,6 +298,65 @@ const maxDlChoices = computed<SelectOption[]>(() => maxDlOptions.value.map((o) =
 const shareCli = computed(() => shareResult.value?.command?.curl ?? '');
 const sharePs = computed(() => shareResult.value?.command?.powershell ?? '');
 
+// ── photo album sharing state (web/sharing_source) ──
+const shareFormat = ref<'file' | 'album'>('file');
+const albumTitle = ref('');
+const albumClientName = ref('');
+const albumDescription = ref('');
+const albumLocation = ref('');
+const albumEventDate = ref('');
+const albumCoverStyle = ref<'haduanh' | 'editorial' | 'minimal' | 'split'>('haduanh');
+
+const formatChoices = computed<ChoiceOption[]>(() => [
+  { value: 'file', label: 'Standard files', help: 'Recipients download files or browse standard file listing' },
+  { value: 'album', label: 'Photo album', help: 'Showcase luxury editorial gallery & masonry photo grid' },
+]);
+
+const coverStyleChoices = computed<SelectOption[]>(() => [
+  { value: 'haduanh', label: 'Haduanh Luxury (Cinematic Fullscreen)' },
+  { value: 'editorial', label: 'Editorial Serif (Classic Magazine)' },
+  { value: 'minimal', label: 'Minimal (Clean Modern Frame)' },
+  { value: 'split', label: 'Split (Two-Column Layout)' },
+]);
+
+async function checkExistingAlbum() {
+  if (!props.isDir) return;
+  try {
+    const idx = await props.api.index(props.path);
+    const files = idx?.files || [];
+    const manifestFile = files.find((f) => {
+      const fn = String(f.basename || (f as any).name || '');
+      return fn === 'album_manifest.json' || fn === 'album.json';
+    });
+    if (manifestFile) {
+      shareFormat.value = 'album';
+      try {
+        const url = props.api.downloadUrl(manifestFile.path);
+        const res = await fetch(url);
+        if (res.ok) {
+          const json = await res.json();
+          const alb = json?.data?.album || json?.album || (json?.data?.type === 'ALBUM' ? json.data : null);
+          if (alb) {
+            if (alb.title) albumTitle.value = alb.title;
+            if (alb.clientName) albumClientName.value = alb.clientName;
+            if (alb.description) albumDescription.value = alb.description;
+            if (alb.location) albumLocation.value = alb.location;
+            if (alb.eventDate) albumEventDate.value = alb.eventDate;
+            if (alb.coverStyle) albumCoverStyle.value = alb.coverStyle;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    } else if (!albumTitle.value) {
+      albumTitle.value = pathParts.value.name;
+    }
+  } catch {
+    // ignore
+  }
+}
+
+
 // ── file-drop (public upload link) state ──
 const dropPwd = ref(false);
 const dropExpiry = ref(defaultExpiryDays(props.shareMaxTtlDays)); // days; 0 = never
@@ -390,6 +449,7 @@ onMounted(async () => {
   document.addEventListener('keydown', onKey);
   await reload();
   await reloadShares();
+  await checkExistingAlbum();
 });
 onBeforeUnmount(() => {
   if (searchTimer) clearTimeout(searchTimer);
@@ -649,6 +709,69 @@ async function createLink() {
       clamped: !!r.share.expiry_clamped,
       command: r.share.download_command ?? null,
     };
+
+    // If sharing as photo album on a directory, create & upload the JSON manifest!
+    if (shareFormat.value === 'album' && props.isDir) {
+      try {
+        const idx = await props.api.index(props.path);
+        const imageExts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'avif'];
+        const imgEntries = (idx?.files || []).filter((f) => {
+          const fn = String(f.basename || (f as any).name || '');
+          const ext = (f.extension || fn.split('.').pop() || '').toLowerCase();
+          return imageExts.includes(ext) && f.type !== 'dir';
+        });
+        const token = r.share.token ?? r.share.uuid;
+        const items = imgEntries.map((f, i) => {
+          const fn = String(f.basename || (f as any).name || '');
+          return {
+            id: `m_${i + 1}_${Math.random().toString(36).slice(2, 8)}`,
+            position: i + 1,
+            type: 'IMAGE',
+            mimeType: f.mime_type || 'image/jpeg',
+            filename: fn,
+            size: f.size || 0,
+            thumbnailUrl: `/s/${token}/f/${encodeURIComponent(fn)}`,
+            previewUrl: `/s/${token}/f/${encodeURIComponent(fn)}`,
+            originalUrl: `/s/${token}/f/${encodeURIComponent(fn)}?download=1`,
+            isFavorite: false,
+            favoriteCount: 0,
+          };
+        });
+        const manifest = {
+          success: true,
+          data: {
+            type: 'ALBUM',
+            share: {
+              token,
+              expiresAt: r.share.expires_at ?? null,
+              permissions: ['view', 'download', `style:${albumCoverStyle.value}`],
+            },
+            album: {
+              id: `alb_${Date.now()}`,
+              title: albumTitle.value || pathParts.value.name,
+              description: albumDescription.value || '',
+              clientName: albumClientName.value || '',
+              location: albumLocation.value || '',
+              eventDate: albumEventDate.value || '',
+              albumType: 'WEDDING',
+              coverStyle: albumCoverStyle.value,
+              coverUrl: items[0]?.originalUrl || '',
+              itemCount: items.length,
+              items,
+            },
+          },
+        };
+        const jsonStr = JSON.stringify(manifest, null, 2);
+        const jsonBlob = new Blob([jsonStr], { type: 'application/json' });
+        const jsonFile = new File([jsonBlob], 'album_manifest.json', { type: 'application/json' });
+        const jsonFile2 = new File([jsonBlob], 'album.json', { type: 'application/json' });
+        await props.api.uploadMultipart(props.path, [jsonFile, jsonFile2]);
+        notice.value = 'Saved photo album configuration to album_manifest.json';
+      } catch (uploadErr) {
+        console.warn('Failed to upload album manifest:', uploadErr);
+      }
+    }
+
     await reloadShares();
   } catch (e) {
     shareErr.value = e instanceof Error ? e.message : String(e);
@@ -997,6 +1120,50 @@ async function nativeShare(body: SheetWords | null) {
             </button>
             <div v-if="open.link" class="fe-share__panel">
               <div class="fe-share__opts">
+                <!-- Share mode selection (File download vs Photo Album) -->
+                <div v-if="isDir" class="fe-share__field" style="grid-column: 1 / -1;">
+                  <span class="fe-share__fieldlabel">Share format</span>
+                  <ChoiceButtons
+                    class="fe-share__level"
+                    :options="formatChoices"
+                    :model-value="shareFormat"
+                    segmented
+                    @update:model-value="(v: string | string[]) => (shareFormat = v as 'file' | 'album')"
+                  />
+                </div>
+
+                <template v-if="isDir && shareFormat === 'album'">
+                  <label class="fe-share__field">
+                    <span class="fe-share__fieldlabel">Album title</span>
+                    <input v-model="albumTitle" type="text" class="fe-share__input" placeholder="e.g. Wedding Showcase" />
+                  </label>
+                  <label class="fe-share__field">
+                    <span class="fe-share__fieldlabel">Client name / Couple</span>
+                    <input v-model="albumClientName" type="text" class="fe-share__input" placeholder="e.g. Alex & Sarah" />
+                  </label>
+                  <label class="fe-share__field">
+                    <span class="fe-share__fieldlabel">Location</span>
+                    <input v-model="albumLocation" type="text" class="fe-share__input" placeholder="e.g. Da Lat, Vietnam" />
+                  </label>
+                  <label class="fe-share__field">
+                    <span class="fe-share__fieldlabel">Event date</span>
+                    <input v-model="albumEventDate" type="text" class="fe-share__input" placeholder="YYYY-MM-DD (e.g. 2026-10-24)" />
+                  </label>
+                  <label class="fe-share__field" style="grid-column: 1 / -1;">
+                    <span class="fe-share__fieldlabel">Description</span>
+                    <input v-model="albumDescription" type="text" class="fe-share__input" placeholder="e.g. Pre-Wedding Editorial & Moments Collection" />
+                  </label>
+                  <label class="fe-share__field" style="grid-column: 1 / -1;">
+                    <span class="fe-share__fieldlabel">Cover style</span>
+                    <ChoiceSelect
+                      class="fe-share__pick"
+                      size="lg"
+                      :model-value="albumCoverStyle"
+                      :options="coverStyleChoices"
+                      @update:model-value="(v) => (albumCoverStyle = String(v) as any)"
+                    />
+                  </label>
+                </template>
                 <!-- ⚠ ONE on/off control in this dialog: the switch. The PIN
                      used to be a native checkbox under a switch — two shapes
                      for one kind of answer (QA, 2026-09-21). -->

@@ -1,0 +1,54 @@
+/* =========================================================================
+   SHARE GALLERY STYLESHEET
+   Dành cho trang Public Share Gallery (Client Luxury / Editorial View)
+   ========================================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=Outfit:wght@300;400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&display=swap');
+
+/* Đổ bóng cho nút trái tim nổi bật trên mọi tone màu ảnh (trắng, đen, rực sáng) */
+.photo-heart-shadow {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+}
+
+/* Nâng tỉ lệ scale nhẹ khi bấm thích */
+.heart-interactive {
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.heart-interactive:hover {
+  transform: scale(1.15);
+}
+.heart-interactive:active {
+  transform: scale(0.92);
+}
+
+/* Scrollbar tinh tế, không làm vướng mắt người xem ảnh */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.3);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* Animation khi mở Lightbox */
+@keyframes fadeInLightbox {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.lightbox-animate {
+  animation: fadeInLightbox 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

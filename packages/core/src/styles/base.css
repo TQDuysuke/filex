@@ -8366,8 +8366,8 @@ filex-explorer {
 .fe-share {
   display: flex;
   flex-direction: column;
-  width: min(440px, 100%);
-  max-height: 86vh;
+  width: min(580px, 100%);
+  max-height: 88vh;
   background: var(--fe-bg);
   color: var(--fe-text);
   border: 1px solid var(--fe-border);

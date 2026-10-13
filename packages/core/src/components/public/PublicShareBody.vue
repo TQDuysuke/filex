@@ -19,7 +19,7 @@
  * (`handlers/public_shell.go`). A second download route under `/api/` would
  * be a second thing to keep working.
  */
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { LocaleCode, ThemeMode } from '../../types/ExplorerConfig';
 import type { PublicEntry, PublicShareInfo } from '../../types/Public';
 import type { PublicLinkStore } from '../../composables/usePublicLink';
@@ -27,6 +27,7 @@ import { useLocale } from '../../composables/useLocale';
 import { usePublicText } from '../../composables/usePublicText';
 import SurfaceConversation from '../plugin/SurfaceConversation.vue';
 import SurfaceFooterButtons from '../plugin/SurfaceFooterButtons.vue';
+import PublicAlbumGallery, { type AlbumData } from './PublicAlbumGallery.vue';
 
 const props = defineProps<{
   link: PublicLinkStore<PublicShareInfo> & {
@@ -71,6 +72,91 @@ const parent = computed(() => {
   const i = p.lastIndexOf('/');
   return i <= 0 ? '' : p.slice(0, i);
 });
+
+// Photo Album Gallery integration (web/sharing_source)
+const albumManifest = ref<AlbumData | null>(null);
+const isAlbumView = ref(true);
+
+const imageEntries = computed(() => {
+  const exts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'avif'];
+  return entries.value.filter((e) => {
+    if (e.is_dir) return false;
+    const fn = e.name || '';
+    const ext = (fn.split('.').pop() || '').toLowerCase();
+    const isMimeImg = (e.mime || '').startsWith('image/');
+    return isMimeImg || exts.includes(ext);
+  });
+});
+
+const fallbackAlbum = computed<AlbumData | null>(() => {
+  if (albumManifest.value) return albumManifest.value;
+  if (!imageEntries.value.length) return null;
+  return {
+    title: node.value?.name || info.value?.subject || 'Bộ sưu tập ảnh',
+    clientName: 'Album ảnh',
+    coverStyle: 'haduanh',
+    items: imageEntries.value.map((e, idx) => ({
+      id: `img_${idx}_${e.name}`,
+      filename: e.name,
+      size: e.size,
+      thumbnailUrl: props.link.downloadUrl({ path: e.name }),
+      previewUrl: props.link.downloadUrl({ path: e.name }),
+      originalUrl: props.link.downloadUrl({ path: e.name }),
+    })),
+  };
+});
+
+const activeAlbum = computed(() => albumManifest.value || fallbackAlbum.value);
+
+async function checkAlbumManifest() {
+  if (kind.value !== 'folder') return;
+  const candidates = ['album_manifest.json', 'album.json'];
+  for (const name of candidates) {
+    try {
+      const url = props.link.downloadUrl({ path: name });
+      const res = await fetch(url);
+      if (res.ok) {
+        const text = await res.text();
+        const json = JSON.parse(text);
+        const alb = json?.data?.album || json?.album || (json?.data?.type === 'ALBUM' ? json.data : null);
+        if (alb && alb.items && alb.items.length) {
+          albumManifest.value = {
+            ...alb,
+            coverUrl: alb.coverUrl
+              ? (alb.coverUrl.startsWith('http') || alb.coverUrl.startsWith('/') ? alb.coverUrl : props.link.downloadUrl({ path: alb.coverUrl }))
+              : (alb.items[0] ? props.link.downloadUrl({ path: alb.items[0].filename }) : ''),
+            items: alb.items.map((it: any) => ({
+              ...it,
+              previewUrl: it.previewUrl?.startsWith('http') || it.previewUrl?.startsWith('/')
+                ? it.previewUrl
+                : props.link.downloadUrl({ path: it.filename }),
+              thumbnailUrl: it.thumbnailUrl?.startsWith('http') || it.thumbnailUrl?.startsWith('/')
+                ? it.thumbnailUrl
+                : props.link.downloadUrl({ path: it.filename }),
+              originalUrl: it.originalUrl?.startsWith('http') || it.originalUrl?.startsWith('/')
+                ? it.originalUrl
+                : props.link.downloadUrl({ path: it.filename }),
+            })),
+          };
+          isAlbumView.value = true;
+          return;
+        }
+      }
+    } catch {
+      // try next candidate
+    }
+  }
+}
+
+watch(
+  () => [kind.value, info.value?.path],
+  () => {
+    if (kind.value === 'folder') {
+      void checkAlbumManifest();
+    }
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -131,7 +217,19 @@ const parent = computed(() => {
 
   <!-- ── a folder ───────────────────────────────────────────────────── -->
   <template v-else-if="kind === 'folder'">
-    <div class="fe-ppage__file-one" data-testid="public-share-folder">
+    <PublicAlbumGallery
+      v-if="activeAlbum && isAlbumView"
+      :album="activeAlbum"
+      :zip-url="link.downloadUrl({ zip: true })"
+      :locale="locale"
+      @switch-to-file-view="isAlbumView = false"
+    />
+    <div v-else class="fe-ppage__file-one" data-testid="public-share-folder">
+      <div v-if="activeAlbum" style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
+        <button type="button" class="fe-btn fe-btn--sm fe-btn--primary" @click="isAlbumView = true">
+          ✨ View as Photo Album Gallery
+        </button>
+      </div>
       <!-- Same rule as a document: the heading is the folder's name already. -->
       <p v-if="!node?.name" class="fe-surface__text">
         <strong>{{ info?.subject }}</strong>

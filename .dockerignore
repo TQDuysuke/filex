@@ -1,6 +1,10 @@
 node_modules
 **/node_modules
 **/dist
+!web/dist
+!web/dist/**
+!packages/webcomponent/dist
+!packages/webcomponent/dist/**
 **/.turbo
 **/.vite
 

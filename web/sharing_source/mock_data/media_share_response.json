@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "data": {
+    "type": "MEDIA",
+    "share": {
+      "token": "c7d2e3f4-5a6b-7c8d-9e0f-1a2b3c4d5e6f",
+      "expiresAt": "2026-11-01T00:00:00.000Z",
+      "permissions": ["view", "download"]
+    },
+    "item": {
+      "id": "m1111111-0000-0000-0000-000000000001",
+      "type": "IMAGE",
+      "mimeType": "image/jpeg",
+      "filename": "TQD_001_Highlight_Master.jpg",
+      "width": 3840,
+      "height": 2160,
+      "duration": null,
+      "dateTaken": "2026-10-12T08:30:00.000Z",
+      "thumbnailUrl": "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=600&q=75",
+      "previewUrl": "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=1600&q=85",
+      "originalUrl": "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=3840&q=95",
+      "imageMetadata": {
+        "cameraModel": "Sony A7 IV",
+        "lens": "FE 50mm F1.2 GM",
+        "iso": 100,
+        "focalLength": 50,
+        "aperture": 1.4,
+        "shutterSpeed": "1/1000s"
+      },
+      "videoMetadata": null
+    }
+  }
+}

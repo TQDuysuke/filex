@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Public Gallery — Luxury Editorial Showcase</title>
+  
+  <!-- CSS Stylesheet -->
+  <link rel="stylesheet" href="./css/public-share.css">
+</head>
+<body>
+
+  <!-- 1. LOADING STATE -->
+  <div id="loadingState" style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #fafafa;">
+    <div style="width: 36px; height: 36px; border: 2px solid #e2e8f0; border-top-color: #0f172a; border-radius: 50%; animation: spin 0.8s linear infinite;"></div>
+    <p style="margin-top: 16px; font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: #64748b;">Đang tải bộ ảnh...</p>
+    <style>
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </div>
+
+  <!-- 2. ERROR STATE -->
+  <div id="errorState" style="display: none; min-height: 100vh; flex-direction: column; align-items: center; justify-content: center; background: #fafafa; padding: 24px; text-align: center;">
+    <div style="width: 56px; height: 56px; border-radius: 50%; background: #fee2e2; color: #ef4444; display: flex; align-items: center; justify-content: center; margin-bottom: 16px;">
+      <span class="material-symbols-outlined" style="font-size: 32px;">error_outline</span>
+    </div>
+    <h2 style="font-family: var(--font-serif); font-size: 24px; color: #171717;">Không thể mở bộ ảnh</h2>
+    <p id="errorMessage" style="color: #64748b; font-size: 14px; margin-top: 8px; max-width: 420px; line-height: 1.5;"></p>
+  </div>
+
+  <!-- 3. MAIN GALLERY CONTENT WRAPPER -->
+  <div id="galleryWrapper" style="display: none;">
+
+    <!-- HERO COVER SECTION (Haduanh Luxury Template) -->
+    <header id="heroCover" class="hero-haduanh">
+      <img id="heroCoverImg" class="hero-bg" src="" alt="Album Cover">
+      <div class="hero-overlay-vignette"></div>
+
+      <!-- Top Line -->
+      <div class="top-line"></div>
+
+      <!-- Center Content -->
+      <div class="hero-center-content">
+        <h1 id="heroTitle" class="hero-title">ALBUM TITLE</h1>
+        <p id="heroClient" class="hero-subtitle">CLIENT NAME</p>
+      </div>
+
+      <!-- Bottom Line -->
+      <div class="bottom-line"></div>
+
+      <!-- Bottom Bar -->
+      <div class="hero-bottom-bar">
+        <div id="heroLocation" class="hero-location-tag">
+          LOCATION / TAGLINE
+        </div>
+        <button id="btnScrollGallery" type="button" class="btn-view-gallery">
+          View Gallery
+        </button>
+      </div>
+    </header>
+
+    <!-- STICKY NAVBAR -->
+    <nav id="galleryNav" class="gallery-nav">
+      <div class="gallery-nav-inner">
+        <div>
+          <h2 id="navTitle" class="gallery-nav-title">Tiêu đề bộ ảnh</h2>
+          <p id="navMeta" class="gallery-nav-meta">0 tác phẩm · 0 đã thích</p>
+        </div>
+
+        <!-- Filter Pill -->
+        <div class="filter-pills">
+          <button id="btnFilterAll" type="button" class="filter-btn active">Tất cả (0)</button>
+          <button id="btnFilterFav" type="button" class="filter-btn">
+            <span class="material-symbols-outlined" style="font-size: 16px;">favorite</span>
+            Đã thích (0)
+          </button>
+        </div>
+      </div>
+    </nav>
+
+    <!-- MASONRY GRID -->
+    <main class="gallery-main">
+      <div id="emptyState" style="display: none; text-align: center; padding: 80px 0; color: #94a3b8;">
+        <span class="material-symbols-outlined" style="font-size: 48px; color: #cbd5e1; margin-bottom: 12px;">heart_broken</span>
+        <p style="font-family: var(--font-serif); font-size: 18px;">Chưa có ảnh nào được thích trong bộ sưu tập này.</p>
+      </div>
+
+      <div id="masonryGrid" class="masonry-columns"></div>
+    </main>
+
+    <!-- FOOTER -->
+    <footer style="padding: 48px 0; border-top: 1px solid var(--border-color); text-align: center; font-size: 12px; color: #94a3b8; font-weight: 300;">
+      <p>© Gallery Platform — All Rights Reserved.</p>
+    </footer>
+  </div>
+
+  <!-- 4. LIGHTBOX MODAL -->
+  <div id="lightboxModal" class="lightbox-modal" style="display: none;">
+    <!-- Topbar -->
+    <div class="lightbox-topbar">
+      <span id="lightboxCounter" style="font-size: 12px; color: #94a3b8; font-family: monospace;">1 / 1</span>
+      
+      <div class="lightbox-actions">
+        <button id="lightboxHeartBtn" type="button" class="lightbox-btn" title="Thích ảnh">
+          <span class="material-symbols-outlined">favorite</span>
+        </button>
+
+        <a id="lightboxDownload" href="#" target="_blank" download class="lightbox-btn" title="Tải ảnh gốc">
+          <span class="material-symbols-outlined">download</span>
+        </a>
+
+        <button id="lightboxClose" type="button" class="lightbox-btn" title="Đóng (Esc)">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Center Image & Navigation -->
+    <div class="lightbox-center">
+      <img id="lightboxImg" src="" alt="Fullscreen Preview">
+
+      <button id="lightboxPrev" type="button" class="lightbox-nav-btn left" title="Ảnh trước">
+        <span class="material-symbols-outlined">chevron_left</span>
+      </button>
+
+      <button id="lightboxNext" type="button" class="lightbox-nav-btn right" title="Ảnh sau">
+        <span class="material-symbols-outlined">chevron_right</span>
+      </button>
+    </div>
+
+    <!-- Bottom Bar -->
+    <div id="lightboxFilename" class="lightbox-bottombar">
+      Tên ảnh
+    </div>
+  </div>
+
+  <!-- Config API Base URL (nếu gọi domain khác) -->
+  <script>
+    // window.SHARE_API_BASE_URL = 'https://api.yourdomain.com';
+  </script>
+
+  <!-- Script Logic -->
+  <script src="./js/public-share.js"></script>
+</body>
+</html>
