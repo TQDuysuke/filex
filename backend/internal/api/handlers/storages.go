@@ -225,8 +225,11 @@ func (h *Storages) List(w http.ResponseWriter, r *http.Request) {
 	type storageWithStats struct {
 		*model.Storage
 		Stats struct {
-			FileCount int64 `json:"file_count"`
-			TotalSize int64 `json:"total_size_bytes"`
+			FileCount          int64    `json:"file_count"`
+			TotalSize          int64    `json:"total_size_bytes"`
+			FreeBytes          *int64   `json:"free_bytes,omitempty"`
+			TotalCapacityBytes *int64   `json:"total_capacity_bytes,omitempty"`
+			UsedPercent        *float64 `json:"used_percent,omitempty"`
 		} `json:"stats"`
 		LastSyncState string `json:"last_sync_state,omitempty"`
 		LastSyncError string `json:"last_sync_error,omitempty"`
@@ -258,6 +261,18 @@ func (h *Storages) List(w http.ResponseWriter, r *http.Request) {
 		if c, sz, err := h.Store.StorageStats(r.Context(), st.ID); err == nil {
 			row.Stats.FileCount = c
 			row.Stats.TotalSize = sz
+		}
+		if free, tot, ok := probeStorageSpace(st); ok {
+			row.Stats.FreeBytes = &free
+			row.Stats.TotalCapacityBytes = &tot
+			pct := (float64(tot-free) / float64(tot)) * 100
+			if pct < 0 {
+				pct = 0
+			}
+			if pct > 100 {
+				pct = 100
+			}
+			row.Stats.UsedPercent = &pct
 		}
 		if run, err := h.Store.GetLastSyncRun(r.Context(), st.ID); err == nil && run != nil {
 			row.LastSyncState = run.Status
@@ -295,8 +310,11 @@ func (h *Storages) Get(w http.ResponseWriter, r *http.Request) {
 	type storageWithStats struct {
 		*model.Storage
 		Stats struct {
-			FileCount int64 `json:"file_count"`
-			TotalSize int64 `json:"total_size_bytes"`
+			FileCount          int64    `json:"file_count"`
+			TotalSize          int64    `json:"total_size_bytes"`
+			FreeBytes          *int64   `json:"free_bytes,omitempty"`
+			TotalCapacityBytes *int64   `json:"total_capacity_bytes,omitempty"`
+			UsedPercent        *float64 `json:"used_percent,omitempty"`
 		} `json:"stats"`
 		// Catalogue, Coverage: see List.
 		Catalogue *syncpkg.CatalogueCoverage `json:"catalogue,omitempty"`
@@ -306,6 +324,18 @@ func (h *Storages) Get(w http.ResponseWriter, r *http.Request) {
 	if c, sz, err := h.Store.StorageStats(r.Context(), st.ID); err == nil {
 		out.Stats.FileCount = c
 		out.Stats.TotalSize = sz
+	}
+	if free, tot, ok := probeStorageSpace(st); ok {
+		out.Stats.FreeBytes = &free
+		out.Stats.TotalCapacityBytes = &tot
+		pct := (float64(tot-free) / float64(tot)) * 100
+		if pct < 0 {
+			pct = 0
+		}
+		if pct > 100 {
+			pct = 100
+		}
+		out.Stats.UsedPercent = &pct
 	}
 	out.Catalogue = h.lazyCatalogue(r.Context(), st.ID)
 	if h.Worker != nil {

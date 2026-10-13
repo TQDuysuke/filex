@@ -68,6 +68,11 @@ export interface NavStorage {
   label?: string;
   driver?: string;
   readOnly?: boolean;
+  usedBytes?: number;
+  fileCount?: number;
+  freeBytes?: number;
+  totalCapacityBytes?: number;
+  usedPercent?: number;
 }
 
 /**
@@ -530,6 +535,83 @@ const quotaText = computed(() => {
   }
   return t('drive.storage.used', { used: formatSize(q.used), total: formatSize(q.total) });
 });
+
+interface StorageUsageInfo {
+  percent: number;
+  caption: string;
+  percentText: string;
+  tooltip: string;
+  barClass: string;
+}
+
+function getStorageUsage(s: NavStorage): StorageUsageInfo | null {
+  if (typeof s.totalCapacityBytes === 'number' && s.totalCapacityBytes > 0 && typeof s.freeBytes === 'number') {
+    const total = s.totalCapacityBytes;
+    const free = s.freeBytes;
+    const used = total - free;
+    const pct = typeof s.usedPercent === 'number'
+      ? Math.max(0, Math.min(100, Math.round(s.usedPercent)))
+      : Math.max(0, Math.min(100, Math.round((used / total) * 100)));
+
+    let barClass = 'fe-sidenav__fill--emerald';
+    if (pct >= 90) barClass = 'fe-sidenav__fill--rose';
+    else if (pct >= 75) barClass = 'fe-sidenav__fill--amber';
+
+    const freeText = formatSize(free);
+    const totalText = formatSize(total);
+    const usedText = formatSize(used);
+    const caption = t('drive.storage.free', { free: freeText });
+    const tooltip = `${usedText} / ${totalText} (${caption})`;
+
+    return {
+      percent: pct,
+      caption,
+      percentText: `${pct}%`,
+      tooltip,
+      barClass,
+    };
+  }
+
+  // Fallback: If user has a quota limit and s.usedBytes is known
+  if (props.quota && props.quota.total > 0 && typeof s.usedBytes === 'number' && s.usedBytes >= 0) {
+    const total = props.quota.total;
+    const used = s.usedBytes;
+    const free = Math.max(0, total - used);
+    const pct = Math.max(0, Math.min(100, Math.round((used / total) * 100)));
+
+    let barClass = 'fe-sidenav__fill--emerald';
+    if (pct >= 90) barClass = 'fe-sidenav__fill--rose';
+    else if (pct >= 75) barClass = 'fe-sidenav__fill--amber';
+
+    const freeText = formatSize(free);
+    const totalText = formatSize(total);
+    const usedText = formatSize(used);
+    const caption = t('drive.storage.free', { free: freeText });
+    const tooltip = `${usedText} / ${totalText} (${caption})`;
+
+    return {
+      percent: pct,
+      caption,
+      percentText: `${pct}%`,
+      tooltip,
+      barClass,
+    };
+  }
+
+  // If only usedBytes is known
+  if (typeof s.usedBytes === 'number' && s.usedBytes > 0) {
+    const usedCaption = t('drive.storage.used_unlimited', { used: formatSize(s.usedBytes) });
+    return {
+      percent: 0,
+      caption: usedCaption,
+      percentText: '',
+      tooltip: usedCaption,
+      barClass: 'fe-sidenav__fill--emerald',
+    };
+  }
+
+  return null;
+}
 
 /** Only the drawer draws this control now (see the template). */
 const toggleLabel = computed(() => t('sidenav.close'));
@@ -1157,24 +1239,51 @@ function onStoragePointerDown(s: NavStorage, ev: PointerEvent) {
                   <path d="M6.5 8h.01M6.5 16h.01" />
                 </template>
               </svg>
-              <span v-if="showLabels" class="fe-sidenav__text">{{ s.label || s.name }}</span>
-              <span
-                v-if="showLabels && sharedSet.has(s.name)"
-                class="fe-sidenav__tag"
-                role="img"
-                :aria-label="t('sidenav.storage.shared')"
-                >{{ t('sidenav.storage.shared') }}</span
-              >
-              <!-- A read-only mount says so on the row, where the user looks
-                   for it. The admin list had an "RO" badge; the people it
-                   applied to never saw one (issue #30). -->
-              <StorageTags
-                v-if="showLabels && s.readOnly"
-                read-only
-                :locale="locale"
-                class="fe-sidenav__stags"
-                data-testid="sidenav-storage-readonly"
-              />
+              <div class="fe-sidenav__storage-info min-w-0 flex-1">
+                <div class="fe-sidenav__storage-title-row flex items-center gap-1.5 min-w-0">
+                  <span v-if="showLabels" class="fe-sidenav__text">{{ s.label || s.name }}</span>
+                  <span
+                    v-if="showLabels && sharedSet.has(s.name)"
+                    class="fe-sidenav__tag"
+                    role="img"
+                    :aria-label="t('sidenav.storage.shared')"
+                    >{{ t('sidenav.storage.shared') }}</span
+                  >
+                  <StorageTags
+                    v-if="showLabels && s.readOnly"
+                    read-only
+                    :locale="locale"
+                    class="fe-sidenav__stags"
+                    data-testid="sidenav-storage-readonly"
+                  />
+                </div>
+                <!-- Progress bar and remaining estimate under the storage name -->
+                <div
+                  v-if="showLabels && getStorageUsage(s)"
+                  class="fe-sidenav__storage-usage"
+                  data-testid="sidenav-storage-usage"
+                >
+                  <div
+                    v-if="getStorageUsage(s)!.percent > 0 || s.totalCapacityBytes"
+                    class="fe-sidenav__storage-bar"
+                    role="progressbar"
+                    :aria-valuenow="getStorageUsage(s)!.percent"
+                    aria-valuemin="0"
+                    aria-valuemax="100"
+                    :title="getStorageUsage(s)!.tooltip"
+                  >
+                    <span
+                      class="fe-sidenav__storage-fill"
+                      :class="getStorageUsage(s)!.barClass"
+                      :style="{ width: getStorageUsage(s)!.percent + '%' }"
+                    ></span>
+                  </div>
+                  <div class="fe-sidenav__storage-subtext">
+                    <span class="fe-sidenav__storage-remain">{{ getStorageUsage(s)!.caption }}</span>
+                    <span v-if="getStorageUsage(s)!.percentText" class="fe-sidenav__storage-pct">{{ getStorageUsage(s)!.percentText }}</span>
+                  </div>
+                </div>
+              </div>
             </button>
           </li>
         </ul>

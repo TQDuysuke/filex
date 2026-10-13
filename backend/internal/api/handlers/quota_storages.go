@@ -18,15 +18,44 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/brf-tech/filex/backend/internal/acl"
 	"github.com/brf-tech/filex/backend/internal/auth"
 	"github.com/brf-tech/filex/backend/internal/confine"
+	"github.com/brf-tech/filex/backend/internal/diskfree"
 	"github.com/brf-tech/filex/backend/internal/memcache"
+	"github.com/brf-tech/filex/backend/internal/model"
 	syncpkg "github.com/brf-tech/filex/backend/internal/sync"
 )
+
+// probeStorageSpace checks the underlying filesystem space for local storage mounts.
+func probeStorageSpace(s *model.Storage) (free int64, total int64, ok bool) {
+	if s == nil || s.Driver != "local" {
+		return 0, 0, false
+	}
+	var cfg map[string]any
+	if len(s.ConfigJSON) > 0 {
+		_ = json.Unmarshal(s.ConfigJSON, &cfg)
+	}
+	p, _ := cfg["path"].(string)
+	if p == "" {
+		p, _ = cfg["root"].(string)
+	}
+	if p == "" {
+		p = s.MountPath
+	}
+	if p == "" {
+		return 0, 0, false
+	}
+	f, tot, err := diskfree.Space(p)
+	if err != nil || tot == 0 {
+		return 0, 0, false
+	}
+	return int64(f), int64(tot), true
+}
 
 // storageUsageTTL is how long a storage's (files, bytes) pair is reused before
 // it is recounted.
@@ -60,9 +89,12 @@ func newStorageUsageCache(ttl time.Duration) *memcache.Cache[int64, storageUsage
 
 // StorageUsageRow is one drive's answer.
 type StorageUsageRow struct {
-	Name      string `json:"name"`
-	UsedBytes int64  `json:"used_bytes"`
-	FileCount int64  `json:"file_count"`
+	Name               string                     `json:"name"`
+	UsedBytes          int64                      `json:"used_bytes"`
+	FileCount          int64                      `json:"file_count"`
+	FreeBytes          *int64                     `json:"free_bytes,omitempty"`
+	TotalCapacityBytes *int64                     `json:"total_capacity_bytes,omitempty"`
+	UsedPercent        *float64                   `json:"used_percent,omitempty"`
 	// Coverage is set when the figure counts only part of the drive: its
 	// first scan is still running, or it is catalogued lazily and not all of
 	// it has been (docs/LAZY-CATALOGUE.md). The card then draws it as a lower
@@ -159,6 +191,18 @@ func (h *Quota) StorageUsage(w http.ResponseWriter, r *http.Request) {
 			h.usage.Put(s.ID, storageUsage{files: files, bytes: bytes})
 		}
 		row := StorageUsageRow{Name: s.Name, UsedBytes: bytes, FileCount: files}
+		if free, tot, ok := probeStorageSpace(s); ok {
+			row.FreeBytes = &free
+			row.TotalCapacityBytes = &tot
+			pct := (float64(tot-free) / float64(tot)) * 100
+			if pct < 0 {
+				pct = 0
+			}
+			if pct > 100 {
+				pct = 100
+			}
+			row.UsedPercent = &pct
+		}
 		if h.Lazy != nil {
 			row.Coverage = h.Lazy.CatalogueCoverage(ctx, s)
 		}

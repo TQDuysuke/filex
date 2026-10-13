@@ -190,6 +190,9 @@ export interface StorageRef {
   stats?: {
     file_count: number;
     total_size_bytes: number;
+    free_bytes?: number;
+    total_capacity_bytes?: number;
+    used_percent?: number;
   };
   last_sync_at?: string | null;
   /** Raw `sync_runs.status` of the last run: the backend writes 'ok',

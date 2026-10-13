@@ -8,13 +8,19 @@ import "golang.org/x/sys/windows"
 // holding dir (GetDiskFreeSpaceEx's first out-parameter honours per-user
 // quotas, which is the number that matters to us).
 func freeBytes(dir string) (uint64, error) {
+	free, _, err := spaceBytes(dir)
+	return free, err
+}
+
+func spaceBytes(dir string) (uint64, uint64, error) {
 	p, err := windows.UTF16PtrFromString(dir)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	var avail, total, totalFree uint64
 	if err := windows.GetDiskFreeSpaceEx(p, &avail, &total, &totalFree); err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	return avail, nil
+	return avail, total, nil
 }
+

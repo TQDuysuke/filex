@@ -320,6 +320,31 @@ onMounted(load);
                forms — see Storages.vue, which draws the same line. -->
           {{ t('storages.fileCount', { n: formatNumber(fileCount, locale) }, fileCount) }}
         </p>
+        <div
+          v-if="item.stats?.total_capacity_bytes"
+          class="mt-2 max-w-xs space-y-1"
+          :title="`${item.stats.used_percent ?? 0}%`"
+        >
+          <div class="h-1.5 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+            <div
+              class="h-full rounded-full transition-all duration-300"
+              :class="[
+                (item.stats.used_percent ?? 0) >= 90
+                  ? 'bg-rose-500'
+                  : (item.stats.used_percent ?? 0) >= 75
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500',
+              ]"
+              :style="{ width: `${Math.min(100, Math.max(0, item.stats.used_percent ?? 0))}%` }"
+            />
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400">
+            {{ t('storages.capacityEstimated', {
+              free: formatBytes(item.stats.free_bytes ?? 0, locale),
+              total: formatBytes(item.stats.total_capacity_bytes, locale),
+            }) }}
+          </p>
+        </div>
       </div>
       <div class="flex items-center gap-2">
         <Button

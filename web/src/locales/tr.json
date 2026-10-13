@@ -312,6 +312,7 @@
       "resetDone": "Depolar varsayılan sıraya döndü"
     },
     "fileCount": "{n} dosya | {n} dosya",
+    "capacityEstimated": "{total} kapasiteden {free} boş",
     "notYetSynced": "Henüz senkron çalışmadı",
     "modeLabel": {
       "fsnotify": "Canlı izleme",

@@ -15,3 +15,8 @@ package diskfree
 // Free returns the space available to this process on the filesystem
 // holding dir.
 func Free(dir string) (uint64, error) { return freeBytes(dir) }
+
+// Space returns the free and total space available on the filesystem
+// holding dir.
+func Space(dir string) (free uint64, total uint64, err error) { return spaceBytes(dir) }
+

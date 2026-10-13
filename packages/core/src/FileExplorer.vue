@@ -3672,7 +3672,7 @@ async function loadQuota() {
   }
   const q = await api.quotaMe();
   quotaMine.value = q;
-  quotaDrives.value = needsMeasuredDrives(q, homeStorages.value) ? await api.storageUsage() : null;
+  quotaDrives.value = await api.storageUsage().catch(() => null);
 }
 
 /**
@@ -3816,7 +3816,24 @@ const homeLoading = ref(false);
  * palette, with this browser's mirror for the first paint, or in the mirror
  * alone for an embed that wires no account document. */
 const storageOrder = useStorageOrder();
-const navStorages = computed(() => orderStorages(props.config.storages ?? [], storageOrder.saved.value));
+const navStorages = computed(() => {
+  const ordered = orderStorages(props.config.storages ?? [], storageOrder.saved.value);
+  const measured = new Map<string, MeasuredDrive>();
+  for (const m of quotaDrives.value ?? []) {
+    if (m?.name) measured.set(m.name, m);
+  }
+  return ordered.map((s) => {
+    const m = measured.get(s.name);
+    return {
+      ...s,
+      usedBytes: s.usedBytes ?? m?.used_bytes,
+      fileCount: s.fileCount ?? m?.file_count,
+      freeBytes: s.freeBytes ?? m?.free_bytes,
+      totalCapacityBytes: s.totalCapacityBytes ?? m?.total_capacity_bytes,
+      usedPercent: s.usedPercent ?? m?.used_percent,
+    };
+  });
+});
 function onReorderStorages(keys: string[]) {
   saveStorageOrder(keys, navStorages.value);
 }

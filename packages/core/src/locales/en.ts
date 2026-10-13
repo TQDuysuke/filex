@@ -1882,6 +1882,8 @@ export const en: Record<string, string> = {
   'drive.storage.used': '{used} of {total} used',
   'drive.storage.used_unlimited': '{used} used',
   'drive.storage.used_partial': 'at least {used} used',
+  'drive.storage.free': '{free} free',
+  'drive.storage.remain_of_total': '{free} free of {total}',
   'drive.storage.label': 'Storage',
   /* === gorunum:v3-shell - the Home view (the overview, inside the shell) ==
    * The section headings are `sidenav.storages` / `sidenav.recent` /

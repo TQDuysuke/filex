@@ -1854,6 +1854,8 @@ export const tr: Record<string, string> = {
   'drive.storage.used': '{total} alanın {used} kadarı dolu',
   'drive.storage.used_unlimited': '{used} kullanılıyor',
   'drive.storage.used_partial': 'en az {used} kullanılıyor',
+  'drive.storage.free': '{free} boş',
+  'drive.storage.remain_of_total': '{total} kapasiteden {free} boş',
   'drive.storage.label': 'Depolama',
   /* === gorunum:v3-shell - Ana sayfa görünümü (kabuğun içindeki genel bakış)
    * Bölüm başlıkları `sidenav.storages` / `sidenav.recent` / `sidenav.starred`,

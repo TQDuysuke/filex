@@ -257,6 +257,31 @@ const recentSyncs = computed(() => sync.items.slice(0, RECENT_SYNCS));
                   }}
                 </span>
               </p>
+              <div
+                v-if="s.stats?.total_capacity_bytes"
+                class="mt-2 space-y-1"
+                :title="`${s.stats.used_percent ?? 0}%`"
+              >
+                <div class="h-1.5 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-300"
+                    :class="[
+                      (s.stats.used_percent ?? 0) >= 90
+                        ? 'bg-rose-500'
+                        : (s.stats.used_percent ?? 0) >= 75
+                          ? 'bg-amber-500'
+                          : 'bg-emerald-500',
+                    ]"
+                    :style="{ width: `${Math.min(100, Math.max(0, s.stats.used_percent ?? 0))}%` }"
+                  />
+                </div>
+                <p class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {{ t('storages.capacityEstimated', {
+                    free: formatBytes(s.stats.free_bytes ?? 0, locale),
+                    total: formatBytes(s.stats.total_capacity_bytes, locale),
+                  }) }}
+                </p>
+              </div>
             </div>
             <!-- ⚠ In words: this printed the wire value ("ok") in every
                  language (release-candidate sweep, 2026-09-21). -->

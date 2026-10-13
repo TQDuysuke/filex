@@ -136,7 +136,7 @@ const columns = computed<DataColumn<StorageRef>[]>(() => [
   {
     id: 'size',
     label: t('storages.columns.size'),
-    width: 200,
+    width: 240,
     format: (s) =>
       `${formatBytes(s.stats?.total_size_bytes ?? s.total_bytes ?? 0, locale.value)} · ${t(
         'storages.fileCount',
@@ -276,6 +276,40 @@ onMounted(load);
                  said "RO" and "local", that one "SALT OKUNUR" and "LOCAL"
                  (QA #34). Both draw the same StorageTags now. -->
             <StorageTags :driver="row.driver" :read-only="row.read_only" :enabled="row.enabled" :locale="locale" />
+          </div>
+        </template>
+
+        <template #cell-size="{ row }">
+          <div class="min-w-0 flex flex-col justify-center">
+            <span class="truncate">
+              {{ formatBytes(row.stats?.total_size_bytes ?? row.total_bytes ?? 0, locale) }} ·
+              {{ t('storages.fileCount', { n: formatNumber(fileCountOf(row), locale) }, fileCountOf(row)) }}
+            </span>
+            <div
+              v-if="row.stats?.total_capacity_bytes"
+              class="mt-1 flex flex-col gap-0.5"
+              :title="`${row.stats.used_percent ?? 0}%`"
+            >
+              <div class="h-1.5 w-full bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                <div
+                  class="h-full rounded-full transition-all duration-300"
+                  :class="[
+                    (row.stats.used_percent ?? 0) >= 90
+                      ? 'bg-rose-500'
+                      : (row.stats.used_percent ?? 0) >= 75
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500',
+                  ]"
+                  :style="{ width: `${Math.min(100, Math.max(0, row.stats.used_percent ?? 0))}%` }"
+                />
+              </div>
+              <span class="text-[11px] text-zinc-500 dark:text-zinc-400">
+                {{ t('storages.capacityEstimated', {
+                  free: formatBytes(row.stats.free_bytes ?? 0, locale),
+                  total: formatBytes(row.stats.total_capacity_bytes, locale),
+                }) }}
+              </span>
+            </div>
           </div>
         </template>
 

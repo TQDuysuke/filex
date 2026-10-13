@@ -11,3 +11,8 @@ import "errors"
 func freeBytes(string) (uint64, error) {
 	return 0, errors.New("diskfree: unsupported on this platform")
 }
+
+func spaceBytes(string) (uint64, uint64, error) {
+	return 0, 0, errors.New("diskfree: unsupported on this platform")
+}
+

@@ -853,6 +853,10 @@ export interface ExplorerConfig {
      * about the person under a label about the drive.
      */
     usedBytes?: number;
+    fileCount?: number;
+    freeBytes?: number;
+    totalCapacityBytes?: number;
+    usedPercent?: number;
     /**
      * `usedBytes` counts only part of the storage: its catalog does not cover
      * all of it yet (the server's `coverage` beside the figure —

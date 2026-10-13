@@ -41,6 +41,12 @@ export interface VisibleStorage {
   usedBytes?: number;
   /** Files held by this storage, when the server reported one (admin only). */
   fileCount?: number;
+  /** Free/available bytes estimated for this storage (when reported by server). */
+  freeBytes?: number;
+  /** Total capacity bytes estimated for this storage (when reported by server). */
+  totalCapacityBytes?: number;
+  /** Percentage of storage used (0-100), when total capacity is known. */
+  usedPercent?: number;
   /**
    * `usedBytes` counts only part of the storage: the server sent `coverage`
    * beside the figure (its catalog does not cover all of it yet — a first
@@ -80,6 +86,9 @@ export function fromAdminStorages(items: readonly StorageRef[]): VisibleStorage[
     readOnly: s.read_only,
     usedBytes: s.stats?.total_size_bytes ?? s.total_bytes,
     fileCount: s.stats?.file_count ?? s.file_count,
+    freeBytes: s.stats?.free_bytes,
+    totalCapacityBytes: s.stats?.total_capacity_bytes,
+    usedPercent: s.stats?.used_percent,
     usedPartial: partial(s.coverage),
     sortOrder: typeof s.sort_order === 'number' ? s.sort_order : null,
   }));
@@ -136,20 +145,49 @@ export function withStorageUsage(
 ): VisibleStorage[] {
   const rows = (body as { storages?: unknown })?.storages;
   if (!Array.isArray(rows)) return [...storages];
-  const byName = new Map<string, { used?: number; files?: number; partial: boolean }>();
+  const byName = new Map<
+    string,
+    {
+      used?: number;
+      files?: number;
+      free?: number;
+      totalCapacity?: number;
+      usedPercent?: number;
+      partial: boolean;
+    }
+  >();
   for (const r of rows) {
-    const row = r as { name?: unknown; used_bytes?: unknown; file_count?: unknown; coverage?: unknown };
+    const row = r as {
+      name?: unknown;
+      used_bytes?: unknown;
+      file_count?: unknown;
+      free_bytes?: unknown;
+      total_capacity_bytes?: unknown;
+      used_percent?: unknown;
+      coverage?: unknown;
+    };
     if (typeof row?.name !== 'string' || row.name === '') continue;
     byName.set(row.name, {
       used: typeof row.used_bytes === 'number' && row.used_bytes >= 0 ? row.used_bytes : undefined,
       files: typeof row.file_count === 'number' && row.file_count >= 0 ? row.file_count : undefined,
+      free: typeof row.free_bytes === 'number' && row.free_bytes >= 0 ? row.free_bytes : undefined,
+      totalCapacity: typeof row.total_capacity_bytes === 'number' && row.total_capacity_bytes >= 0 ? row.total_capacity_bytes : undefined,
+      usedPercent: typeof row.used_percent === 'number' && row.used_percent >= 0 ? row.used_percent : undefined,
       partial: partial(row.coverage),
     });
   }
   return storages.map((s) => {
     const hit = byName.get(s.name);
     if (!hit || hit.used === undefined) return { ...s };
-    return { ...s, usedBytes: hit.used, fileCount: hit.files ?? s.fileCount, usedPartial: hit.partial };
+    return {
+      ...s,
+      usedBytes: hit.used,
+      fileCount: hit.files ?? s.fileCount,
+      freeBytes: hit.free ?? s.freeBytes,
+      totalCapacityBytes: hit.totalCapacity ?? s.totalCapacityBytes,
+      usedPercent: hit.usedPercent ?? s.usedPercent,
+      usedPartial: hit.partial,
+    };
   });
 }
 

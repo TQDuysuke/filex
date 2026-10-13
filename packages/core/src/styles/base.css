@@ -5772,6 +5772,68 @@ filex-explorer {
   color: var(--fe-text-muted);
 }
 
+/* ── per-storage usage progress bar in SideNav ────────────────────────── */
+.fe-sidenav__storage-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.fe-sidenav__storage-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.fe-sidenav__storage-usage {
+  margin-top: 4px;
+  min-width: 0;
+  width: 100%;
+}
+.fe-sidenav__storage-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--fe-bg-hover, rgba(0, 0, 0, 0.08));
+  overflow: hidden;
+  width: 100%;
+}
+.fe-sidenav__storage-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.fe-sidenav__fill--emerald {
+  background: #10b981;
+}
+.fe-sidenav__fill--amber {
+  background: #f59e0b;
+}
+.fe-sidenav__fill--rose {
+  background: #f43f5e;
+}
+.fe-sidenav__storage-subtext {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--fe-text-muted);
+}
+.fe-sidenav__storage-remain {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fe-sidenav__storage-pct {
+  font-weight: 500;
+  font-size: 10.5px;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
 /* ── the breadcrumb row ───────────────────────────────────────────────── */
 /* Not a drive shell: the wrapper leaves layout entirely, so the breadcrumb is
    the same flex child of .fe__primary it has always been. */
@@ -13044,6 +13106,7 @@ filex-explorer {
 .fe-spdf__strip > .fe-spdf__hint {
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   line-height: 18px;

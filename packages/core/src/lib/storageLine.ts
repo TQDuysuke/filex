@@ -52,6 +52,10 @@ export interface PersonUsage {
 export interface PanelDrive {
   name: string;
   usedBytes?: number;
+  fileCount?: number;
+  freeBytes?: number;
+  totalCapacityBytes?: number;
+  usedPercent?: number;
   usedPartial?: boolean;
 }
 
@@ -60,6 +64,9 @@ export interface MeasuredDrive {
   name: string;
   used_bytes: number;
   file_count?: number;
+  free_bytes?: number;
+  total_capacity_bytes?: number;
+  used_percent?: number;
   coverage?: CatalogCoverage | null;
 }
 

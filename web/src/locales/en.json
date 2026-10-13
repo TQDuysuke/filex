@@ -312,6 +312,7 @@
       "resetDone": "The storages are back in the default order"
     },
     "fileCount": "{n} file | {n} files",
+    "capacityEstimated": "{free} free of {total}",
     "notYetSynced": "Sync has not run yet",
     "modeLabel": {
       "fsnotify": "Live watch",
