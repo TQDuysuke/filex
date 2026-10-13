@@ -2268,6 +2268,8 @@ export const en: Record<string, string> = {
   'access.ui.level_owner': 'Owner',
   'access.ui.level_owner_desc': 'edit + manage access',
   'access.ui.never': 'Never',
+  'access.ui.custom_expiry': 'Custom expiry date & time',
+  'access.ui.custom_expiry_option': 'Custom date & time',
   'access.ui.days': '{days} days',
   'access.ui.days_one': '{days} day',
   'access.ui.unlimited': 'Unlimited',

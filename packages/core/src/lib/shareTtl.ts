@@ -26,19 +26,20 @@ function say(locale: string, key: string, vars: Record<string, string | number> 
 }
 
 export interface ExpiryOption {
-  /** Days; 0 = never. */
+  /** Days; 0 = never, -1 = custom. */
   v: number;
   l: string;
 }
 
-/** The stock expiry choices before the ceiling is applied (days; 0 = never). */
-export const STOCK_EXPIRY_DAYS = [0, 1, 7, 30];
+/** The stock expiry choices before the ceiling is applied (days; 0 = never, -1 = custom). */
+export const STOCK_EXPIRY_DAYS = [0, 1, 7, 30, -1];
 
 /**
  * clampExpiryOptions returns the options a dialog may show under a ceiling
  * of `maxDays` (0/undefined = no ceiling → every option as is). Options past
  * the ceiling and "never" are dropped; the ceiling itself is added as the
  * longest choice when the stock list does not already contain it.
+ * Custom (-1) is always offered so users can pick a specific date/time.
  */
 export function clampExpiryOptions(
   days: number[],
@@ -48,7 +49,14 @@ export function clampExpiryOptions(
   const max = maxDays && maxDays > 0 ? Math.floor(maxDays) : 0;
   let list = max ? days.filter((d) => d > 0 && d <= max) : days.slice();
   if (max && !list.includes(max)) list.push(max);
-  list = Array.from(new Set(list)).sort((a, b) => (a === 0 ? -1 : b === 0 ? 1 : a - b));
+  if (!list.includes(-1)) list.push(-1);
+  list = Array.from(new Set(list)).sort((a, b) => {
+    if (a === 0) return -1;
+    if (b === 0) return 1;
+    if (a === -1) return 1;
+    if (b === -1) return -1;
+    return a - b;
+  });
   return list.map((d) => ({ v: d, l: label(d) }));
 }
 

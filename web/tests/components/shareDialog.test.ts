@@ -13,6 +13,7 @@
 //        full stop, because the sentence was two halves around a <strong>.
 import { describe, expect, it, vi } from 'vitest';
 import { flushPromises, mount } from '@vue/test-utils';
+import { pickOption } from '../helpers/choiceSelect';
 
 import PermissionsModal from '@brftech/filex-core/src/modals/PermissionsModal.vue';
 import InspectorPanel from '@brftech/filex-core/src/components/InspectorPanel.vue';
@@ -291,6 +292,42 @@ describe('what the server decides about a new link (#210)', () => {
     const body = (api.createShare as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
     expect(body.expires_in).toBe(7 * 86400);
     expect(body).not.toHaveProperty('expires_at');
+    w.unmount();
+  });
+
+  it('supports permanent expiry (never) with expires_in: null', async () => {
+    const { api } = fakeApi({ perms: 'owner' });
+    const w = dialog({ api, shareMaxTtlDays: 0 });
+    await flushPromises();
+    await w.get('[data-testid="share-options-toggle"]').trigger('click');
+    await flushPromises();
+    await pickOption(w.get('[data-testid="share-expiry"]'), 0);
+    await flushPromises();
+    await w.get('[data-testid="share-create"]').trigger('click');
+    await flushPromises();
+    const body = (api.createShare as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect(body.expires_in).toBeNull();
+    expect(body).not.toHaveProperty('expires_at');
+    w.unmount();
+  });
+
+  it('supports custom datetime expiry with expires_at ISO string', async () => {
+    const { api } = fakeApi({ perms: 'owner' });
+    const w = dialog({ api, shareMaxTtlDays: 0 });
+    await flushPromises();
+    await w.get('[data-testid="share-options-toggle"]').trigger('click');
+    await flushPromises();
+    await pickOption(w.get('[data-testid="share-expiry"]'), -1);
+    await flushPromises();
+    expect(w.find('[data-testid="share-custom-expiry"]').exists()).toBe(true);
+    const customInput = w.get('[data-testid="share-custom-expiry"]');
+    await customInput.setValue('2026-12-31T23:59');
+    await flushPromises();
+    await w.get('[data-testid="share-create"]').trigger('click');
+    await flushPromises();
+    const body = (api.createShare as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as Record<string, unknown>;
+    expect(body.expires_in).toBeNull();
+    expect(body.expires_at).toBe(new Date('2026-12-31T23:59').toISOString());
     w.unmount();
   });
 });

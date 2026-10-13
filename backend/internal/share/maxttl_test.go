@@ -64,18 +64,14 @@ func TestCreate_ClampsToTheMaxTTLSetting(t *testing.T) {
 
 	require.Equal(t, DefaultMaxTTLDays, svc.MaxTTLDays(ctx), "unset setting = default")
 
-	before := time.Now()
 	sh, err := svc.Create(ctx, CreateOpts{NodeID: n.ID})
 	require.NoError(t, err)
-	require.NotNil(t, sh.ExpiresAt, "a link minted with no expiry must still get one")
-	limit := before.Add(time.Duration(DefaultMaxTTLDays) * 24 * time.Hour)
-	require.WithinDuration(t, limit, *sh.ExpiresAt, time.Minute)
+	require.Nil(t, sh.ExpiresAt, "a link minted with no expiry and default 0 ceiling stays permanent")
 
 	month := time.Now().Add(30 * 24 * time.Hour)
 	sh, err = svc.Create(ctx, CreateOpts{NodeID: n.ID, ExpiresAt: &month})
 	require.NoError(t, err)
-	require.True(t, sh.ExpiresAt.Before(month), "30 days must be shortened to the 7-day ceiling")
-	require.WithinDuration(t, limit, *sh.ExpiresAt, time.Minute)
+	require.Equal(t, month.Unix(), sh.ExpiresAt.Unix(), "with no ceiling 30 days is kept")
 
 	// A shorter ceiling set by the admin wins over the default…
 	require.NoError(t, store.UpsertSetting(ctx, SettingKeyMaxTTLDays, "2"))

@@ -481,6 +481,25 @@ describe('My shares — the row', () => {
     w.unmount();
   });
 
+  it('offers direct open link and delete buttons, and delete confirms before firing', async () => {
+    const w = mountPage();
+    await flushPromises();
+
+    const openBtn = w.get('[data-testid="my-share-open-13"]');
+    expect(openBtn.attributes('href')).toBe(withPin.url);
+    expect(openBtn.attributes('target')).toBe('_blank');
+
+    const delBtn = w.get('[data-testid="my-share-delete-13"]');
+    await delBtn.trigger('click');
+    await flushPromises();
+
+    expect(document.body.textContent).toContain(en.myShares.deleteTitle);
+    await w.get('[data-testid="my-share-delete-confirm"]').trigger('click');
+    await flushPromises();
+    expect(vi.mocked(api.delete)).toHaveBeenCalledWith('/shares/13');
+    w.unmount();
+  });
+
   it('speaks Turkish with Turkish letters', async () => {
     const w = mountPage('tr');
     await flushPromises();

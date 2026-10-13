@@ -251,6 +251,35 @@ func (h *SharesMine) Pin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, body)
 }
 
+// Delete hard-deletes a share row owned by the caller (or admin).
+func (h *SharesMine) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad id"})
+		return
+	}
+	user := auth.UserFrom(r.Context())
+	if user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	sh, err := h.Store.GetShareByID(r.Context(), id)
+	if err != nil || sh == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	if !user.IsAdmin() && (sh.CreatedBy == nil || *sh.CreatedBy != user.ID) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	if err := h.Store.DeleteShare(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	appLinkEnded(r.Context(), h.Apps, sh, "deleted")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // reveal is the nil-safe call into the share service.
 func (h *SharesMine) reveal(sh *model.Share) (string, error) {
 	if h.Service == nil {

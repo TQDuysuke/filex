@@ -2233,6 +2233,8 @@ export const tr: Record<string, string> = {
   'access.ui.level_owner': 'Sahip',
   'access.ui.level_owner_desc': 'düzenle + izin yönet',
   'access.ui.never': 'Süresiz',
+  'access.ui.custom_expiry': 'Özel son kullanma tarihi',
+  'access.ui.custom_expiry_option': 'Özel tarih ve saat',
   'access.ui.days': '{days} gün',
   'access.ui.days_one': '{days} gün',
   'access.ui.unlimited': 'Sınırsız',

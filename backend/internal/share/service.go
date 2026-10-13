@@ -31,10 +31,9 @@ var ErrBadPIN = errors.New("share: bad pin")
 // {share_max_ttl_days}) and seeded once from FILEX_SHARE_MAX_TTL.
 const SettingKeyMaxTTLDays = "share.max_ttl_days"
 
-// DefaultMaxTTLDays applies when the setting has never been written. Seven
-// days: a link that is meant to be opened this week, and a folder archive
-// that does not have to be kept warm for a month.
-const DefaultMaxTTLDays = 7
+// DefaultMaxTTLDays applies when the setting has never been written.
+// 0 = no ceiling: links can be permanent (never expire) unless an admin sets a limit.
+const DefaultMaxTTLDays = 0
 
 // MaxTTLDaysLimit bounds the setting itself.
 const MaxTTLDaysLimit = 3650

@@ -105,4 +105,9 @@ export const MySharesApi = {
   async revoke(id: number): Promise<void> {
     await api.delete(`/files/share/${id}`);
   },
+
+  /** Hard-delete a share link permanently. */
+  async delete(id: number): Promise<void> {
+    await api.delete(`/shares/${id}`);
+  },
 };

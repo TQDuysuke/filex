@@ -36,7 +36,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { ArrowLeft, Link2, Lock, RefreshCcw } from 'lucide-vue-next';
+import { ArrowLeft, ExternalLink, Link2, Lock, RefreshCcw, Trash2 } from 'lucide-vue-next';
 
 import { MySharesApi, type MyShareRow, type PinUnavailable } from '@/api/myShares';
 import type { PaginatedResponse, Share, ShareState } from '@/api/types';
@@ -60,6 +60,7 @@ const loading = ref(false);
 const page = ref(1);
 const pageSize = 25;
 const confirmRevoke = ref<MyShareRow | null>(null);
+const confirmDelete = ref<MyShareRow | null>(null);
 const busyId = ref<number | null>(null);
 
 /**
@@ -194,6 +195,28 @@ async function revoke() {
   }
 }
 
+function openLink(row: MyShareRow) {
+  const url = linkOf(row);
+  if (url) window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function remove() {
+  const row = confirmDelete.value;
+  const id = row ? shareOf(row).id : 0;
+  if (!id) return;
+  busyId.value = id;
+  try {
+    await MySharesApi.delete(id);
+    toast.success(t('myShares.deletedOk'));
+    confirmDelete.value = null;
+    await load();
+  } catch (e: unknown) {
+    toast.error(extractError(e, t('errors.generic')));
+  } finally {
+    busyId.value = null;
+  }
+}
+
 /**
  * The row's verbs.
  *
@@ -208,6 +231,7 @@ function rowActions(row: MyShareRow): ContextAction[] {
      own. */
   const busy = busyId.value !== null && busyId.value === shareOf(row).id;
   return [
+    { key: 'open-link', label: t('myShares.openLink'), icon: 'link', disabled: busy },
     { key: 'copy-link', label: t('myShares.copyLink'), icon: 'link', disabled: busy },
     {
       key: 'copy-pin',
@@ -224,13 +248,22 @@ function rowActions(row: MyShareRow): ContextAction[] {
       hidden: !isLive(row),
       disabled: busy,
     },
+    {
+      key: 'delete',
+      label: t('myShares.delete'),
+      icon: 'delete',
+      danger: true,
+      disabled: busy,
+    },
   ];
 }
 
 function onRowAction(key: string, row: MyShareRow) {
-  if (key === 'copy-link') void copyLink(row);
+  if (key === 'open-link') openLink(row);
+  else if (key === 'copy-link') void copyLink(row);
   else if (key === 'copy-pin') void copyPin(row);
   else if (key === 'revoke') confirmRevoke.value = row;
+  else if (key === 'delete') confirmDelete.value = row;
 }
 
 /* ⚠ The list is paged by the SERVER, which has no sort parameter: while it
@@ -283,6 +316,13 @@ const columns = computed<DataColumn<MyShareRow>[]>(() => [
       return max ? `${cur} / ${max}` : String(cur);
     },
     sortValue: (r) => shareOf(r).download_count ?? 0,
+  },
+  {
+    id: 'quick_actions',
+    label: t('common.actions') || 'Actions',
+    sortable: false,
+    width: 90,
+    align: 'center',
   },
 ]);
 
@@ -411,6 +451,34 @@ onMounted(load);
         </span>
         <span v-else class="text-xs">{{ t('myShares.neverExpires') }}</span>
       </template>
+
+      <!-- Quick actions: open link directly and delete share -->
+      <template #cell-quick_actions="{ row }">
+        <div class="inline-flex items-center gap-1">
+          <a
+            :href="linkOf(row)"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="inline-flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:text-blue-600 hover:bg-blue-50 dark:text-zinc-400 dark:hover:text-blue-400 dark:hover:bg-blue-950/40 transition-colors"
+            :title="t('myShares.openLink')"
+            :data-testid="`my-share-open-${shareOf(row).id}`"
+            @click.stop
+          >
+            <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+            <span class="sr-only">{{ t('myShares.openLink') }}</span>
+          </a>
+          <button
+            type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:text-rose-600 hover:bg-rose-50 dark:text-zinc-400 dark:hover:text-rose-400 dark:hover:bg-rose-950/40 transition-colors"
+            :title="t('myShares.delete')"
+            :data-testid="`my-share-delete-${shareOf(row).id}`"
+            @click.stop="confirmDelete = row"
+          >
+            <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+            <span class="sr-only">{{ t('myShares.delete') }}</span>
+          </button>
+        </div>
+      </template>
     </DataTable>
 
     <!--
@@ -435,6 +503,27 @@ onMounted(load);
           @click="revoke"
         >
           {{ t('myShares.revokeDo') }}
+        </Button>
+      </template>
+    </Modal>
+
+    <!-- Modal confirm delete permanent -->
+    <Modal
+      :model-value="confirmDelete !== null"
+      :title="t('myShares.deleteTitle')"
+      size="sm"
+      @update:model-value="(v) => (v ? null : (confirmDelete = null))"
+    >
+      <p class="text-sm" data-testid="my-share-delete-warning">{{ t('myShares.deleteConfirm') }}</p>
+      <template #footer>
+        <Button variant="ghost" data-testid="my-share-delete-dismiss" @click="confirmDelete = null">{{ t('common.dismiss') }}</Button>
+        <Button
+          variant="danger"
+          data-testid="my-share-delete-confirm"
+          :loading="busyId !== null"
+          @click="remove"
+        >
+          {{ t('myShares.delete') }}
         </Button>
       </template>
     </Modal>
