@@ -64,7 +64,7 @@ function scroll(direction: 'left' | 'right') {
           <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
         </svg>
-        <span class="aifs-people-title">Recognized People</span>
+        <span class="aifs-people-title">Gương mặt nhận diện</span>
       </div>
 
       <button
@@ -73,7 +73,7 @@ function scroll(direction: 'left' | 'right') {
         class="aifs-people-clear-btn"
         @click="chooseFace(null)"
       >
-        View all photos
+        Xem tất cả ảnh
       </button>
     </div>
 
@@ -82,7 +82,7 @@ function scroll(direction: 'left' | 'right') {
       <button
         type="button"
         class="aifs-people-nav-btn aifs-people-nav-btn--left"
-        aria-label="Scroll left"
+        aria-label="Cuộn trái"
         @click="scroll('left')"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -93,7 +93,7 @@ function scroll(direction: 'left' | 'right') {
       <button
         type="button"
         class="aifs-people-nav-btn aifs-people-nav-btn--right"
-        aria-label="Scroll right"
+        aria-label="Cuộn phải"
         @click="scroll('right')"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -102,7 +102,7 @@ function scroll(direction: 'left' | 'right') {
       </button>
 
       <div ref="scrollRef" class="aifs-people-track">
-        <!-- All Photos Pill -->
+        <!-- Tất cả / All Photos Pill -->
         <button
           type="button"
           class="aifs-person-item"
@@ -117,7 +117,7 @@ function scroll(direction: 'left' | 'right') {
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           </div>
-          <span class="aifs-person-label">All</span>
+          <span class="aifs-person-label">Tất cả</span>
         </button>
 
         <!-- Individual Clustered Faces -->
@@ -133,7 +133,7 @@ function scroll(direction: 'left' | 'right') {
             <img
               v-if="person.crop_url || person.face_crop_url"
               :src="person.crop_url || person.face_crop_url"
-              alt="Recognized People"
+              alt="Gương mặt nhận diện"
               loading="lazy"
               class="aifs-avatar-img"
             />
@@ -153,7 +153,7 @@ function scroll(direction: 'left' | 'right') {
           </div>
 
           <span v-if="person.photo_count > 0" class="aifs-person-count">
-            {{ person.photo_count }} {{ person.photo_count === 1 ? 'photo' : 'photos' }}
+            {{ person.photo_count }} ảnh
           </span>
         </button>
       </div>
@@ -511,5 +511,5 @@ function scroll(direction: 'left' | 'right') {
 @keyframes aifs-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }
-}
+  }
 </style>
