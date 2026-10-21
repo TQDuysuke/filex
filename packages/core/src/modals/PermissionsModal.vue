@@ -309,6 +309,7 @@ const sharePs = computed(() => shareResult.value?.command?.powershell ?? '');
 
 // ── photo album sharing state (web/sharing_source) ──
 const shareFormat = ref<'file' | 'album'>('file');
+const aifsEnabled = ref(false);
 const albumTitle = ref('');
 const albumClientName = ref('');
 const albumDescription = ref('');
@@ -352,6 +353,10 @@ async function checkExistingAlbum() {
             if (alb.location) albumLocation.value = alb.location;
             if (alb.eventDate) albumEventDate.value = alb.eventDate;
             if (alb.coverStyle) albumCoverStyle.value = alb.coverStyle;
+          }
+          const sharePerms = json?.data?.share?.permissions || [];
+          if (sharePerms.includes('aifs') || json?.data?.aifs_enabled) {
+            aifsEnabled.value = true;
           }
         }
       } catch {
@@ -740,6 +745,7 @@ async function createLink() {
       // null, not 0 — the server reads 0 as "no cap given" either way, but a
       // null says it explicitly and keeps the payload honest.
       max_downloads: shareMaxDl.value || null,
+      aifs_enabled: aifsEnabled.value,
     });
     shareResult.value = {
       // The create answer's `uuid` IS the token (share.go shareCreateRespInner).
@@ -785,8 +791,9 @@ async function createLink() {
             share: {
               token,
               expiresAt: r.share.expires_at ?? null,
-              permissions: ['view', 'download', `style:${albumCoverStyle.value}`],
+              permissions: ['view', 'download', `style:${albumCoverStyle.value}`, ...(aifsEnabled.value ? ['aifs'] : [])],
             },
+            aifs_enabled: aifsEnabled.value,
             album: {
               id: `alb_${Date.now()}`,
               title: albumTitle.value || pathParts.value.name,
@@ -807,10 +814,14 @@ async function createLink() {
         const jsonFile = new File([jsonBlob], 'album_manifest.json', { type: 'application/json' });
         const jsonFile2 = new File([jsonBlob], 'album.json', { type: 'application/json' });
         await props.api.uploadMultipart(props.path, [jsonFile, jsonFile2]);
-        notice.value = 'Saved photo album configuration to album_manifest.json';
+        notice.value = aifsEnabled.value
+          ? 'AIFS enabled. AI indexing in progress...'
+          : 'Saved photo album configuration.';
       } catch (uploadErr) {
         console.warn('Failed to upload album manifest:', uploadErr);
       }
+    } else if (aifsEnabled.value) {
+      notice.value = 'AIFS enabled. AI indexing in progress...';
     }
 
     await reloadShares();
@@ -1216,6 +1227,20 @@ async function nativeShare(body: SheetWords | null) {
                     />
                   </label>
                 </template>
+
+                <!-- AIFS Option for directories (Name only, English, no icon/description) -->
+                <label v-if="isDir" class="fe-share__togglerow">
+                  <span class="fe-share__togglelabel">AI Face Search (AIFS)</span>
+                  <button
+                    type="button"
+                    class="fe-share__switch"
+                    role="switch"
+                    :aria-checked="aifsEnabled ? 'true' : 'false'"
+                    data-testid="share-aifs-switch"
+                    @click="aifsEnabled = !aifsEnabled; if (aifsEnabled && shareFormat !== 'album') shareFormat = 'album';"
+                  ><span class="fe-share__knob"></span></button>
+                </label>
+
                 <!-- ⚠ ONE on/off control in this dialog: the switch. The PIN
                      used to be a native checkbox under a switch — two shapes
                      for one kind of answer (QA, 2026-09-21). -->

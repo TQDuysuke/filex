@@ -269,6 +269,9 @@ func (s *Store) WithTx(ctx context.Context, fn func(ctx context.Context) error) 
 // Close implements db.Store.
 func (s *Store) Close() error { return s.db.Close() }
 
+// RawDB returns the underlying *sql.DB pool.
+func (s *Store) RawDB() *sql.DB { return s.db }
+
 // ─────────────────── Storages ───────────────────
 
 func (s *Store) CreateStorage(ctx context.Context, st *model.Storage) (*model.Storage, error) {

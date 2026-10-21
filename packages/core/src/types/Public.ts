@@ -223,3 +223,42 @@ export interface PublicLocaleOption {
    */
   rtl?: boolean;
 }
+
+/* ── public photo album ──────────────────────────────────────────────── */
+
+export interface AlbumItem {
+  id: string;
+  filename: string;
+  size?: number;
+  width?: number | null;
+  height?: number | null;
+  thumbnailUrl?: string;
+  previewUrl?: string;
+  originalUrl?: string;
+  isFavorite?: boolean;
+  camera?: string | null;
+  lens?: string | null;
+  iso?: number | null;
+  aperture?: string | null;
+  shutter_speed?: string | null;
+  focal_length?: string | null;
+  taken_at?: string | null;
+  faces?: {
+    id: number | string;
+    bbox?: { x: number; y: number; width: number; height: number };
+    crop_url?: string;
+  }[];
+}
+
+export interface AlbumData {
+  id?: string;
+  title: string;
+  clientName?: string;
+  description?: string;
+  location?: string;
+  eventDate?: string;
+  coverStyle?: 'haduanh' | 'editorial' | 'minimal' | 'split' | string;
+  coverUrl?: string;
+  itemCount?: number;
+  items: AlbumItem[];
+}

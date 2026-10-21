@@ -333,3 +333,4 @@ onMounted(async () => {
   opacity: 0;
 }
 </style>
+<!-- aifs v2 core build -->

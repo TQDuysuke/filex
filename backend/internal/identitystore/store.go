@@ -22,6 +22,7 @@ package identitystore
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 
 	"github.com/brf-tech/filex/backend/internal/db"
@@ -39,6 +40,17 @@ var _ db.Store = (*Store)(nil)
 
 // New wraps s.
 func New(s db.Store) *Store { return &Store{Store: s} }
+
+// Unwrap returns the underlying wrapped Store.
+func (s *Store) Unwrap() db.Store { return s.Store }
+
+// RawDB exposes the underlying *sql.DB if supported by the inner store.
+func (s *Store) RawDB() *sql.DB {
+	if raw, ok := s.Store.(interface{ RawDB() *sql.DB }); ok {
+		return raw.RawDB()
+	}
+	return nil
+}
 
 // CreateUser creates the account and claims a username derived from its
 // e-mail.

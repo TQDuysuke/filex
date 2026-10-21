@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/brf-tech/filex/backend/internal/acl"
+	"github.com/brf-tech/filex/backend/internal/aifs"
 	"github.com/brf-tech/filex/backend/internal/auth"
 	"github.com/brf-tech/filex/backend/internal/basepath"
 	"github.com/brf-tech/filex/backend/internal/db"
@@ -81,7 +82,12 @@ type Share struct {
 	// Index keeps the search index in step when sharing records a file the
 	// catalogue had not seen yet (catalogueOnDemand). nil-safe.
 	Index *search.Index
+	// Notify coordinates notifications for share events and AIFS indexing.
+	Notify notify.Service
 }
+
+// AttachNotify wires the notify service used for file events and AIFS completion.
+func (h *Share) AttachNotify(n notify.Service) { h.Notify = n }
 
 // AttachIndex wires the search index for on-demand cataloguing.
 func (h *Share) AttachIndex(idx *search.Index) { h.Index = idx }
@@ -158,6 +164,7 @@ type shareCreateReq struct {
 	// Shared.
 	ExpiresAt    string `json:"expires_at,omitempty"` // RFC3339 — overrides expires_in
 	MaxDownloads int    `json:"max_downloads,omitempty"`
+	AIFSEnabled  *bool  `json:"aifs_enabled,omitempty"`
 
 	// File-drop (public upload link) fields. kind=="drop" mints an UPLOAD
 	// link into a folder — the inverse of a download share. The target must
@@ -187,6 +194,7 @@ type shareCreateRespInner struct {
 	// echoing a date the user never picked.
 	ExpiryClamped bool `json:"expiry_clamped,omitempty"`
 	MaxDownloads  *int `json:"max_downloads,omitempty"`
+	AIFSEnabled   bool `json:"aifs_enabled,omitempty"`
 	// DownloadCommand is the one line that fetches a DOWNLOAD link's file
 	// from a terminal (share_command.go), the PIN in it when this answer
 	// carries one. Absent for a file-drop link, which has nothing to fetch.
@@ -428,6 +436,18 @@ func (h *Share) HandleCreate(w http.ResponseWriter, r *http.Request) {
 		shareEv.Node = &notify.NodeRef{StorageID: node.StorageID, Path: node.Path, Name: node.Name, Size: node.Size}
 	}
 	emitFileEvent(r.Context(), shareEv)
+
+	// AIFS AI Photo Indexing trigger: when aifs_enabled is requested for a directory share
+	if req.AIFSEnabled != nil && *req.AIFSEnabled && node != nil {
+		inner.AIFSEnabled = true
+		album, syncErr := aifs.SyncAlbumFromNode(r.Context(), h.Store, aifs.DefaultStoreInstance(), node.StorageID, node.ID, sh.Token, node.Name)
+		if syncErr == nil && album != nil {
+			indexer := aifs.NewIndexer(nil)
+			_ = indexer.StartIndexing(album.ID, h.Store, aifs.DefaultStoreInstance(), h.StorageResolver, h.Body, h.Notify)
+		} else if syncErr != nil {
+			slog.Warn("aifs: failed to sync album on share create", "err", syncErr, "storage_id", node.StorageID, "node_id", node.ID)
+		}
+	}
 
 	// ⭐ Build the folder's ZIP NOW, not when somebody clicks download.
 	// The background warmer would have got to it within five minutes, but the

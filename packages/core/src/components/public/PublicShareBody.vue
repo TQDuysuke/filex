@@ -21,13 +21,13 @@
  */
 import { computed, ref, watch } from 'vue';
 import type { LocaleCode, ThemeMode } from '../../types/ExplorerConfig';
-import type { PublicEntry, PublicShareInfo } from '../../types/Public';
+import type { PublicEntry, PublicShareInfo, AlbumData } from '../../types/Public';
 import type { PublicLinkStore } from '../../composables/usePublicLink';
 import { useLocale } from '../../composables/useLocale';
 import { usePublicText } from '../../composables/usePublicText';
 import SurfaceConversation from '../plugin/SurfaceConversation.vue';
 import SurfaceFooterButtons from '../plugin/SurfaceFooterButtons.vue';
-import PublicAlbumGallery, { type AlbumData } from './PublicAlbumGallery.vue';
+import PublicAlbumGallery from './PublicAlbumGallery.vue';
 
 const props = defineProps<{
   link: PublicLinkStore<PublicShareInfo> & {
@@ -77,6 +77,14 @@ const parent = computed(() => {
 const albumManifest = ref<AlbumData | null>(null);
 const isAlbumView = ref(true);
 
+const resolvedToken = computed(() => {
+  if (typeof window !== 'undefined') {
+    const match = window.location.pathname.match(/\/s\/([a-zA-Z0-9_\-]+)/);
+    if (match) return match[1];
+  }
+  return '';
+});
+
 const imageEntries = computed(() => {
   const exts = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'avif'];
   return entries.value.filter((e) => {
@@ -92,8 +100,8 @@ const fallbackAlbum = computed<AlbumData | null>(() => {
   if (albumManifest.value) return albumManifest.value;
   if (!imageEntries.value.length) return null;
   return {
-    title: node.value?.name || info.value?.subject || 'Bộ sưu tập ảnh',
-    clientName: 'Album ảnh',
+    title: node.value?.name || info.value?.subject || 'Photo Collection',
+    clientName: 'Collection',
     coverStyle: 'haduanh',
     items: imageEntries.value.map((e, idx) => ({
       id: `img_${idx}_${e.name}`,
@@ -220,6 +228,7 @@ watch(
     <PublicAlbumGallery
       v-if="activeAlbum && isAlbumView"
       :album="activeAlbum"
+      :token="resolvedToken"
       :zip-url="link.downloadUrl({ zip: true })"
       :locale="locale"
       @switch-to-file-view="isAlbumView = false"
@@ -227,7 +236,7 @@ watch(
     <div v-else class="fe-ppage__file-one" data-testid="public-share-folder">
       <div v-if="activeAlbum" style="display: flex; justify-content: flex-end; margin-bottom: 14px;">
         <button type="button" class="fe-btn fe-btn--sm fe-btn--primary" @click="isAlbumView = true">
-          ✨ View as Photo Album Gallery
+          View as Photo Album
         </button>
       </div>
       <!-- Same rule as a document: the heading is the folder's name already. -->

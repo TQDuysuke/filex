@@ -1,0 +1,57 @@
+{
+  "success": true,
+  "data": {
+    "type": "ALBUM",
+    "share": {
+      "token": "b7c4f760068bf6ab9480c1fb973200ba",
+      "expiresAt": null,
+      "permissions": [
+        "view",
+        "download",
+        "style:haduanh",
+        "aifs"
+      ]
+    },
+    "aifs_enabled": true,
+    "album": {
+      "id": "alb_1792557121231",
+      "title": "Album_Demo",
+      "description": "",
+      "clientName": "",
+      "location": "",
+      "eventDate": "",
+      "albumType": "WEDDING",
+      "coverStyle": "haduanh",
+      "coverUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/DUY04557.jpg?download=1",
+      "itemCount": 2,
+      "items": [
+        {
+          "id": "m_1_9lmlc3",
+          "position": 1,
+          "type": "IMAGE",
+          "mimeType": "image/jpeg",
+          "filename": "DUY04557.jpg",
+          "size": 1317805,
+          "thumbnailUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/DUY04557.jpg",
+          "previewUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/DUY04557.jpg",
+          "originalUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/DUY04557.jpg?download=1",
+          "isFavorite": false,
+          "favoriteCount": 0
+        },
+        {
+          "id": "m_2_5jwp3o",
+          "position": 2,
+          "type": "IMAGE",
+          "mimeType": "image/jpeg",
+          "filename": "portrait1.jpg",
+          "size": 667725,
+          "thumbnailUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/portrait1.jpg",
+          "previewUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/portrait1.jpg",
+          "originalUrl": "/s/b7c4f760068bf6ab9480c1fb973200ba/f/portrait1.jpg?download=1",
+          "isFavorite": false,
+          "favoriteCount": 0
+        }
+      ]
+    }
+  }
+}

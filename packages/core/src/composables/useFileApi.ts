@@ -1869,6 +1869,7 @@ export function useFileApi(config: ExplorerConfig) {
     kind?: string;
     max_uploads?: number | null;
     drop_settings?: Record<string, unknown> | null;
+    aifs_enabled?: boolean;
   }): Promise<{ share: ShareInfo & { url: string; path: string; filename: string; kind?: string; token?: string } }> {
     if (!endpoints.shareCreate) throw new Error('shareCreate endpoint not configured');
     return jsonFetch(endpoints.shareCreate, {
@@ -1882,6 +1883,30 @@ export function useFileApi(config: ExplorerConfig) {
     if (!endpoints.shareList) return { shares: [] };
     const sep = endpoints.shareList.includes('?') ? '&' : '?';
     return jsonFetch(`${endpoints.shareList}${sep}path=${encodeURIComponent(path)}`);
+  }
+
+  async function getNodeAifsStatus(nodeId: number): Promise<{
+    enabled: boolean;
+    status: string;
+    album_id?: number;
+    title?: string;
+    total_photos?: number;
+    indexed_photos?: number;
+    detected_faces?: number;
+    clusters_count?: number;
+    percent_complete?: number;
+  }> {
+    const base = endpoints.manager ? endpoints.manager.replace(/\/manager(\?.*)?$/, '') : '/api/files';
+    return jsonFetch(`${base}/nodes/${encodeURIComponent(nodeId)}/aifs/status`);
+  }
+
+  async function indexNodeAifs(nodeId: number): Promise<{
+    ok: boolean;
+    status: string;
+    message?: string;
+  }> {
+    const base = endpoints.manager ? endpoints.manager.replace(/\/manager(\?.*)?$/, '') : '/api/files';
+    return jsonFetch(`${base}/nodes/${encodeURIComponent(nodeId)}/aifs/index`, { method: 'POST' });
   }
 
   async function revokeShare(uuid: string): Promise<{ success: boolean }> {
@@ -2108,6 +2133,8 @@ export function useFileApi(config: ExplorerConfig) {
     fetchResponse,
     createShare,
     listShares,
+    getNodeAifsStatus,
+    indexNodeAifs,
     revokeShare,
     archiveList,
     archiveExtract,

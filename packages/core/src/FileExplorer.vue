@@ -9789,6 +9789,11 @@ const inspectorDirCount = computed(() =>
 const inspectorDirPerm = computed(() =>
   paneIsActive.value ? (splitPaneRef.value?.dirPerm() ?? '') : dirPerm.value,
 );
+/** Node ID of an item in the directory for AIFS face indexing tracking */
+const inspectorDirNodeId = computed<number | null>(() => {
+  const match = files.value.find((f: FileNode) => typeof f.id === 'number');
+  return match?.id ?? null;
+});
 
 // Pane helpers — always wrap the main pane's existing converters.
 function paneToUser(wire: string): string {
@@ -12732,6 +12737,7 @@ function closeRecoveryKey() {
       :dir-label="inspectorDirLabel"
       :dir-count="inspectorDirCount"
       :dir-perm="inspectorDirPerm"
+      :dir-node-id="inspectorDirNodeId"
       :held-in="inspectorHeldIn /* non-empty ⇒ this is the LAST selected thing,
              not what is ticked in front of you, and it lives here. */"
       :locale="locale"

@@ -105,6 +105,7 @@ package quotastore
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 	"sync"
 	"time"
@@ -267,6 +268,17 @@ var _ db.Store = (*Store)(nil)
 // override, a real one).
 func New(s db.Store) *Store {
 	return &Store{Store: s, q: quota.New(s)}
+}
+
+// Unwrap returns the underlying wrapped Store.
+func (s *Store) Unwrap() db.Store { return s.Store }
+
+// RawDB exposes the underlying *sql.DB if supported by the inner store.
+func (s *Store) RawDB() *sql.DB {
+	if raw, ok := s.Store.(interface{ RawDB() *sql.DB }); ok {
+		return raw.RawDB()
+	}
+	return nil
 }
 
 // Quota returns the service the wrapper accounts through, so the bootstrap

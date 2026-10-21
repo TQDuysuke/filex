@@ -11,6 +11,7 @@ package tenantstore
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/brf-tech/filex/backend/internal/db"
 	"github.com/brf-tech/filex/backend/internal/model"
@@ -25,6 +26,17 @@ type Store struct {
 // New wraps s. Safe everywhere; it only diverges from s when the context carries
 // a tenant scope (i.e. an authenticated request in multi-tenant mode).
 func New(s db.Store) *Store { return &Store{Store: s} }
+
+// Unwrap returns the underlying wrapped Store.
+func (s *Store) Unwrap() db.Store { return s.Store }
+
+// RawDB exposes the underlying *sql.DB if supported by the inner store.
+func (s *Store) RawDB() *sql.DB {
+	if raw, ok := s.Store.(interface{ RawDB() *sql.DB }); ok {
+		return raw.RawDB()
+	}
+	return nil
+}
 
 // ListStorages returns only the storages the request's tenant may see.
 func (s *Store) ListStorages(ctx context.Context) ([]*model.Storage, error) {

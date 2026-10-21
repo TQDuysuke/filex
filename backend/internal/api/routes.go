@@ -605,6 +605,9 @@ func BuildRouter(d *Deps) http.Handler {
 	// Fallback language for the public pages when the visitor's browser asks
 	// for neither of the two we ship (see publicLocale).
 	sh.AttachLocale(d.Cfg.DefaultLocale)
+	sh.AttachNotify(d.Notify)
+
+	aifsH := handlers.NewAIFSHandler(d.Store, d.Share, d.StorageResolver, d.Body, d.Notify)
 	// File-drop (public upload link) handler — the inverse of Share. Reuses
 	// the manager's ingest path (IngestFile/EnsureDir) so dropped files land
 	// exactly like authenticated uploads (mime, node cache, thumbnails).
@@ -1040,6 +1043,12 @@ func BuildRouter(d *Deps) http.Handler {
 		r.Post("/event", pubAPI.Event)
 		r.Get("/file/{ref}", pubAPI.File)
 		r.Get("/entries", pubAPI.Entries)
+		// AIFS Face Search & status for public photo albums
+		r.Post("/face-search", aifsH.FaceSearch)
+		r.Get("/aifs/status", aifsH.Status)
+		r.Post("/aifs/index", aifsH.IndexAlbum)
+		r.Get("/faces", aifsH.ClusteredFaces)
+		r.Get("/faces/{faceID}/crop", aifsH.FaceCrop)
 	})
 	r.Route("/api/public/d/{token}", func(r chi.Router) {
 		r.Get("/", pubAPI.DropState)
@@ -1567,6 +1576,8 @@ func BuildRouter(d *Deps) http.Handler {
 			// people, not two machines: *"paylaşımın sahibi ve admin"*.
 			r.With(handlers.RequirePersonalCaller).Get("/{id}/pin", sharesMineH.Pin)
 			r.Delete("/{id}", sharesMineH.Delete)
+			r.Post("/{token}/aifs/enable", aifsH.EnableAndIndex)
+			r.Get("/{token}/aifs/status", aifsH.Status)
 		})
 
 		// ────── the embedded store screen (#162) ──────
@@ -1724,6 +1735,10 @@ func BuildRouter(d *Deps) http.Handler {
 			// A public link and its revocation are `write`, as on /api/ai.
 			r.With(write).Post("/share", sh.HandleCreate)
 			r.With(write).Delete("/share/{id}", sh.HandleDelete)
+			r.With(write).Post("/share/{token}/aifs/enable", aifsH.EnableAndIndex)
+			r.Get("/share/{token}/aifs/status", aifsH.Status)
+			r.Get("/nodes/{id}/aifs/status", aifsH.NodeStatus)
+			r.With(write).Post("/nodes/{id}/aifs/index", aifsH.IndexNode)
 
 			// OnlyOffice editor config. The SFC's PreviewModal posts a
 			// JSON body when it has the file context handy; the Editor

@@ -204,6 +204,7 @@ type Store struct {
 
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 func (s *Store) Close() error                   { return s.db.Close() }
+func (s *Store) RawDB() *sql.DB                 { return s.db }
 
 // conn is the handle a statement runs on: the transaction ctx carries on this
 // database (Store.WithTx), or the pool. Every statement in this driver asks.

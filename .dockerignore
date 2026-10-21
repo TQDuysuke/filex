@@ -25,4 +25,7 @@ e2e/.playwright-mcp
 .idea
 .vscode
 *.log
+*.tar
 sweep-2026-05-09
+data/
+storage-local/

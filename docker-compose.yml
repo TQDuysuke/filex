@@ -71,6 +71,11 @@ services:
 
       # --- Thumbs ---
       FILEX_THUMBS_ENABLED: ${FILEX_THUMBS_ENABLED:-false}
+
+      # --- AIFS AI Photo Indexing ---
+      FILEX_AIFS_URL: ${FILEX_AIFS_URL:-http://host.docker.internal:8000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5212/healthz"]
       interval: 30s

@@ -1,0 +1,44 @@
+{
+  "success": true,
+  "data": {
+    "type": "ALBUM",
+    "share": {
+      "token": "eae50eea4b0a6c4b3d1070ebfb58b33e",
+      "expiresAt": null,
+      "permissions": [
+        "view",
+        "download",
+        "style:haduanh",
+        "aifs"
+      ]
+    },
+    "aifs_enabled": true,
+    "album": {
+      "id": "alb_1792548069835",
+      "title": "Album_Demo",
+      "description": "",
+      "clientName": "",
+      "location": "",
+      "eventDate": "",
+      "albumType": "WEDDING",
+      "coverStyle": "haduanh",
+      "coverUrl": "/s/eae50eea4b0a6c4b3d1070ebfb58b33e/f/portrait1.jpg?download=1",
+      "itemCount": 1,
+      "items": [
+        {
+          "id": "m_1_vqef0m",
+          "position": 1,
+          "type": "IMAGE",
+          "mimeType": "image/jpeg",
+          "filename": "portrait1.jpg",
+          "size": 667725,
+          "thumbnailUrl": "/s/eae50eea4b0a6c4b3d1070ebfb58b33e/f/portrait1.jpg",
+          "previewUrl": "/s/eae50eea4b0a6c4b3d1070ebfb58b33e/f/portrait1.jpg",
+          "originalUrl": "/s/eae50eea4b0a6c4b3d1070ebfb58b33e/f/portrait1.jpg?download=1",
+          "isFavorite": false,
+          "favoriteCount": 0
+        }
+      ]
+    }
+  }
+}

@@ -23,7 +23,7 @@
  *
  * The panel is mounted with v-if by the host — closed state leaves zero DOM.
  */
-import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, onBeforeUnmount } from 'vue';
 import type { FileApi, Grant, NodeVersion } from '../composables/useFileApi';
 import type { FileNode, ShareInfo } from '../types/FileNode';
 import type { LocaleCode, ThemeMode } from '../types/ExplorerConfig';
@@ -54,6 +54,8 @@ const props = withDefaults(
   dirCount: number;
   /** RBAC effective level of the current dir ('' = ACL not enforced). */
   dirPerm?: string;
+  /** Node ID of the containing folder (optional, for face indexing progress). */
+  dirNodeId?: number | null;
   /**
    * pane:p1 — non-empty ⇒ `nodes` is the LAST selected thing, not what is
    * ticked in the pane the person is looking at; the value NAMES where it
@@ -756,6 +758,96 @@ watch(
   { immediate: true },
 );
 /* === /calisma:d3 === */
+
+/* === Face Indexing (AIFS) === */
+interface AifsStatusData {
+  enabled: boolean;
+  status: string;
+  album_id?: number;
+  node_id?: number;
+  title?: string;
+  total_photos?: number;
+  indexed_photos?: number;
+  detected_faces?: number;
+  clusters_count?: number;
+  percent_complete?: number;
+}
+const aifsStatus = ref<AifsStatusData | null>(null);
+const aifsIndexingBusy = ref(false);
+let aifsPollTimer: ReturnType<typeof setInterval> | null = null;
+
+const isFolderContext = computed(() => {
+  if (single.value) {
+    return single.value.type === 'dir';
+  }
+  return props.nodes.length === 0;
+});
+
+async function loadAifsStatus(): Promise<void> {
+  const targetId = single.value?.id ?? props.dirNodeId ?? null;
+  if (!targetId || typeof targetId !== 'number') {
+    aifsStatus.value = null;
+    return;
+  }
+  try {
+    const res = await props.api.getNodeAifsStatus(targetId);
+    aifsStatus.value = res;
+    if (res.enabled && (res.status === 'indexing' || res.status === 'pending')) {
+      if (!aifsPollTimer) {
+        aifsPollTimer = setInterval(loadAifsStatus, 2000);
+      }
+    } else {
+      if (aifsPollTimer) {
+        clearInterval(aifsPollTimer);
+        aifsPollTimer = null;
+      }
+    }
+  } catch {
+    aifsStatus.value = null;
+    if (aifsPollTimer) {
+      clearInterval(aifsPollTimer);
+      aifsPollTimer = null;
+    }
+  }
+}
+
+async function triggerAifsIndexing(): Promise<void> {
+  const targetId = single.value?.id ?? props.dirNodeId ?? null;
+  if (!targetId || typeof targetId !== 'number' || aifsIndexingBusy.value) return;
+  aifsIndexingBusy.value = true;
+  try {
+    await props.api.indexNodeAifs(targetId);
+    emit('toast', 'Face indexing started');
+    await loadAifsStatus();
+    if (!aifsPollTimer) {
+      aifsPollTimer = setInterval(loadAifsStatus, 2000);
+    }
+  } catch (err) {
+    emit('toast', (err as Error).message);
+  } finally {
+    aifsIndexingBusy.value = false;
+  }
+}
+
+watch(
+  () => [single.value?.id, props.dirNodeId],
+  () => {
+    if (aifsPollTimer) {
+      clearInterval(aifsPollTimer);
+      aifsPollTimer = null;
+    }
+    void loadAifsStatus();
+  },
+  { immediate: true },
+);
+
+onBeforeUnmount(() => {
+  if (aifsPollTimer) {
+    clearInterval(aifsPollTimer);
+    aifsPollTimer = null;
+  }
+});
+/* === /Face Indexing (AIFS) === */
 </script>
 
 <template>
@@ -981,6 +1073,75 @@ watch(
         <!-- No selection → nothing more to say. The head already names the
              folder you are in and counts what is in it. -->
         <p v-else class="fe-inspector__empty">{{ t('inspector.select_hint') }}</p>
+      </section>
+
+      <!-- ══ Face Indexing (AIFS) ══ -->
+      <section
+        v-if="(isFolderContext || (aifsStatus && aifsStatus.enabled)) && (!tabs || tab === 'details')"
+        class="fe-inspector__section fe-inspector__aifs"
+        data-testid="inspector-face-indexing"
+      >
+        <div class="fe-inspector__aifs-head">
+          <h3 class="fe-inspector__heading">Face Indexing</h3>
+          <span
+            class="fe-inspector__aifs-badge"
+            :class="`fe-inspector__aifs-badge--${aifsStatus?.status || 'not_indexed'}`"
+          >
+            {{
+              aifsStatus?.status === 'ready' || aifsStatus?.status === 'indexed'
+                ? 'Ready'
+                : aifsStatus?.status === 'indexing'
+                ? 'Indexing'
+                : aifsStatus?.status === 'pending'
+                ? 'Pending'
+                : aifsStatus?.status === 'failed'
+                ? 'Failed'
+                : 'Not Indexed'
+            }}
+          </span>
+        </div>
+
+        <div v-if="aifsStatus && (aifsStatus.status === 'indexing' || aifsStatus.status === 'pending')" class="fe-inspector__aifs-progress">
+          <div class="fe-inspector__aifs-track">
+            <div
+              class="fe-inspector__aifs-bar"
+              :style="{ width: `${Math.min(100, Math.round(aifsStatus.percent_complete ?? 0))}%` }"
+            ></div>
+          </div>
+          <span class="fe-inspector__aifs-pct">
+            {{ Math.min(100, Math.round(aifsStatus.percent_complete ?? 0)) }}%
+          </span>
+        </div>
+
+        <dl v-if="aifsStatus && aifsStatus.enabled" class="fe-inspector__meta">
+          <div class="fe-inspector__row">
+            <dt>Indexed Photos</dt>
+            <dd>{{ aifsStatus.indexed_photos ?? 0 }} / {{ aifsStatus.total_photos ?? 0 }}</dd>
+          </div>
+          <div class="fe-inspector__row">
+            <dt>Detected Faces</dt>
+            <dd>{{ aifsStatus.detected_faces ?? 0 }}</dd>
+          </div>
+          <div v-if="typeof aifsStatus.clusters_count === 'number'" class="fe-inspector__row">
+            <dt>Unique People</dt>
+            <dd>{{ aifsStatus.clusters_count }}</dd>
+          </div>
+        </dl>
+
+        <div class="fe-inspector__aifs-actions" style="margin-top: 10px;">
+          <button
+            type="button"
+            class="fe-btn fe-btn--sm fe-btn--primary"
+            :disabled="aifsIndexingBusy || (aifsStatus?.status === 'indexing')"
+            @click="triggerAifsIndexing"
+          >
+            {{
+              aifsIndexingBusy || aifsStatus?.status === 'indexing'
+                ? 'Indexing...'
+                : (aifsStatus?.status === 'ready' ? 'Re-index Faces' : 'Index Faces')
+            }}
+          </button>
+        </div>
       </section>
 
       <!-- ══ etiket:t1 — Etiketler ══
@@ -1284,3 +1445,64 @@ watch(
     </div>
   </aside>
 </template>
+
+<style scoped>
+.fe-inspector__aifs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.fe-inspector__aifs-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 9999px;
+  text-transform: capitalize;
+  background: var(--fe-border, #e4e4e7);
+  color: var(--fe-text-muted, #71717a);
+}
+.fe-inspector__aifs-badge--ready,
+.fe-inspector__aifs-badge--indexed {
+  background: rgba(16, 185, 129, 0.15);
+  color: #10b981;
+}
+.fe-inspector__aifs-badge--indexing,
+.fe-inspector__aifs-badge--pending {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+.fe-inspector__aifs-badge--failed {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.fe-inspector__aifs-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.fe-inspector__aifs-track {
+  flex: 1;
+  height: 6px;
+  background: var(--fe-border, #e4e4e7);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+.fe-inspector__aifs-bar {
+  height: 100%;
+  background: #3b82f6;
+  border-radius: 9999px;
+  transition: width 0.3s ease;
+}
+.fe-inspector__aifs-pct {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--fe-text-muted, #71717a);
+  min-width: 32px;
+  text-align: right;
+}
+</style>
