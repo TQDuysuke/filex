@@ -73,7 +73,9 @@ services:
       FILEX_THUMBS_ENABLED: ${FILEX_THUMBS_ENABLED:-false}
 
       # --- AIFS AI Photo Indexing ---
-      FILEX_AIFS_URL: ${FILEX_AIFS_URL:-http://host.docker.internal:8000}
+      FILEX_AIFS_URL: ${FILEX_AIFS_URL:-http://ai-service:8000}
+    depends_on:
+      - ai-service
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -82,6 +84,33 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+    networks:
+      - filex-net
+
+  # ---------------------------------------------------------------------
+  # AIFS AI Service (Embedded) — Face Detection & 512-d Embedding Engine
+  # Powered by InsightFace + ONNX Runtime (CPU)
+  # ---------------------------------------------------------------------
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    image: ${FILEX_AI_IMAGE:-filex-ai:custom}
+    container_name: filex-ai-service
+    restart: unless-stopped
+    ports:
+      - "${FILEX_AIFS_PORT:-8000}:8000"
+    environment:
+      INSIGHTFACE_MODEL: ${INSIGHTFACE_MODEL:-buffalo_sc}
+      INSIGHTFACE_ROOT: /models
+    volumes:
+      - ai-models:/models
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 5
     networks:
       - filex-net
 
@@ -234,6 +263,7 @@ services:
       - filex-net
 
 volumes:
+  ai-models:
   onlyoffice-data:
   onlyoffice-logs:
   onlyoffice-cache:
