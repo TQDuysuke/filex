@@ -50,7 +50,7 @@ const accentValid = computed(() => /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(f
 // indigo. The placeholder below and the hex quoted by
 // `settings.accentInvalid` are the same value on purpose: an example that
 // disagrees with the preview teaches the operator the wrong colour.
-const previewAccent = computed(() => (accentValid.value ? form.accent : '#2f6ceb'));
+const previewAccent = computed(() => (accentValid.value ? form.accent : '#FFC629'));
 
 /** The preview in the light/dark this panel is in (the public page follows
  *  the visitor's own choice, then the instance default, then the system). */
@@ -189,7 +189,7 @@ onMounted(() => settings.fetch());
             <div class="flex-1">
               <Input
                 :model-value="form.accent"
-                placeholder="#2f6ceb"
+                placeholder="#FFC629"
                 monospace
                 @update:model-value="(v) => (form.accent = v as string)"
               />

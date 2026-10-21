@@ -253,7 +253,13 @@ export interface AlbumItem {
 export interface AlbumData {
   id?: string;
   title: string;
+  name?: string;
   clientName?: string;
+  client_name?: string;
+  studioName?: string;
+  studio_name?: string;
+  customLogoUrl?: string;
+  custom_logo_url?: string;
   description?: string;
   location?: string;
   eventDate?: string;

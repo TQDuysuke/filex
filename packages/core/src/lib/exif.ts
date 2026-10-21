@@ -30,14 +30,29 @@ export function parseExifFromBuffer(buffer: ArrayBuffer | Uint8Array): ExifMetad
 
   let offset = 2;
   let exifOffset = -1;
+  let sofWidth = 0;
+  let sofHeight = 0;
 
   while (offset < data.length - 4) {
-    if (data[offset] !== 0xFF) break;
+    if (data[offset] !== 0xFF) {
+      offset++;
+      continue;
+    }
     const marker = data[offset + 1];
+
+    // SOF0 (0xC0), SOF1 (0xC1), SOF2 (0xC2) markers contain true image dimensions
+    if ((marker === 0xC0 || marker === 0xC1 || marker === 0xC2) && offset + 8 < data.length) {
+      sofHeight = (data[offset + 5] << 8) | data[offset + 6];
+      sofWidth = (data[offset + 7] << 8) | data[offset + 8];
+    }
+
+    // Stop scan at Start of Scan (0xDA)
+    if (marker === 0xDA) break;
+
     const len = (data[offset + 2] << 8) | data[offset + 3];
 
     // APP1 marker 0xFFE1
-    if (marker === 0xE1) {
+    if (marker === 0xE1 && offset + 10 <= data.length) {
       if (
         data[offset + 4] === 0x45 && // E
         data[offset + 5] === 0x78 && // x
@@ -47,21 +62,28 @@ export function parseExifFromBuffer(buffer: ArrayBuffer | Uint8Array): ExifMetad
         data[offset + 9] === 0x00
       ) {
         exifOffset = offset + 10;
-        break;
       }
     }
     offset += 2 + len;
   }
 
-  if (exifOffset === -1 || exifOffset + 8 > data.length) return null;
+  const result: ExifMetadata = {};
+  if (sofWidth > 0 && sofHeight > 0) {
+    result.width = sofWidth;
+    result.height = sofHeight;
+  }
+
+  if (exifOffset === -1 || exifOffset + 8 > data.length) {
+    return Object.keys(result).length > 0 ? result : null;
+  }
 
   const view = new DataView(data.buffer, data.byteOffset + exifOffset, data.length - exifOffset);
   const endianBytes = (data[exifOffset] << 8) | data[exifOffset + 1];
   const isLE = endianBytes === 0x4949; // 'II' = Little Endian, 'MM' = Big Endian
-  if (endianBytes !== 0x4949 && endianBytes !== 0x4D4D) return null;
+  if (endianBytes !== 0x4949 && endianBytes !== 0x4D4D) return result;
 
   const magic = view.getUint16(2, isLE);
-  if (magic !== 0x002A) return null;
+  if (magic !== 0x002A) return result;
 
   const ifd0Offset = view.getUint32(4, isLE);
 
@@ -120,7 +142,6 @@ export function parseExifFromBuffer(buffer: ArrayBuffer | Uint8Array): ExifMetad
   }
 
   const ifd0 = parseIFD(ifd0Offset);
-  const result: ExifMetadata = {};
 
   if (ifd0[0x010F]) result.make = String(ifd0[0x010F]);
   if (ifd0[0x0110]) result.model = String(ifd0[0x0110]);
@@ -153,10 +174,11 @@ export function parseExifFromBuffer(buffer: ArrayBuffer | Uint8Array): ExifMetad
       }
     }
 
-    // ISO (0x8827)
-    if (subIFD[0x8827] !== undefined) {
-      const isoVal = typeof subIFD[0x8827] === 'number' ? subIFD[0x8827] : subIFD[0x8827]?.value;
-      if (isoVal) result.iso = Number(isoVal);
+    // ISO (0x8827 or 0x8833)
+    const isoVal = subIFD[0x8827] !== undefined ? subIFD[0x8827] : subIFD[0x8833];
+    if (isoVal !== undefined && isoVal !== null) {
+      const n = typeof isoVal === 'number' ? isoVal : isoVal?.value;
+      if (n) result.iso = Number(n);
     }
 
     // DateTimeOriginal (0x9003) e.g. "2026:09:01 12:28:16"
@@ -183,7 +205,7 @@ export function parseExifFromBuffer(buffer: ArrayBuffer | Uint8Array): ExifMetad
       result.lens = String(subIFD[0xA434]);
     }
 
-    // Dimensions (0xA002, 0xA003)
+    // Dimensions in Exif (0xA002, 0xA003)
     if (subIFD[0xA002]) {
       const w = typeof subIFD[0xA002] === 'number' ? subIFD[0xA002] : subIFD[0xA002]?.value;
       if (w) result.width = Number(w);
@@ -211,7 +233,7 @@ export async function parseExifFromBlob(blob: Blob): Promise<ExifMetadata | null
 }
 
 /**
- * Fetches EXIF header from a URL using Range header (first 128KB) or full fetch fallback.
+ * Fetches EXIF header from a URL using streaming or Range header (first 128KB).
  */
 export async function fetchAndParseExif(url: string): Promise<ExifMetadata | null> {
   try {
@@ -219,15 +241,46 @@ export async function fetchAndParseExif(url: string): Promise<ExifMetadata | nul
       headers: { Range: 'bytes=0-131071' },
     });
     if (!res.ok && res.status !== 206) {
-      // Range not supported, fallback to regular fetch
-      const fullRes = await fetch(url);
-      if (!fullRes.ok) return null;
-      const buf = await fullRes.arrayBuffer();
-      return parseExifFromBuffer(buf);
+      return null;
     }
+
+    // Prefer stream reader to download only the initial 128KB chunk without reading the whole file
+    if (res.body && typeof res.body.getReader === 'function') {
+      const reader = res.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let totalBytes = 0;
+      const maxBytes = 131072;
+
+      try {
+        while (totalBytes < maxBytes) {
+          const { done, value } = await reader.read();
+          if (done || !value) break;
+          chunks.push(value);
+          totalBytes += value.length;
+        }
+      } finally {
+        try {
+          await reader.cancel();
+        } catch {
+          // ignore stream cancellation error
+        }
+      }
+
+      if (chunks.length > 0) {
+        const combined = new Uint8Array(totalBytes);
+        let pos = 0;
+        for (const chunk of chunks) {
+          combined.set(chunk, pos);
+          pos += chunk.length;
+        }
+        return parseExifFromBuffer(combined.buffer);
+      }
+    }
+
     const buf = await res.arrayBuffer();
     return parseExifFromBuffer(buf);
-  } catch {
+  } catch (e) {
+    console.warn('fetchAndParseExif failed for url:', url, e);
     return null;
   }
 }

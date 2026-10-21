@@ -546,6 +546,7 @@ export const en: Record<string, string> = {
   'theme.name.contrast': 'High contrast',
   'theme.name.gray': 'Soft gray',
   'theme.name.terminal': 'Terminal green',
+  'theme.name.aifs': 'AIFS Luxury Gold',
   /* === zaman:z3 - the time-zone picker (embed dialog + web settings) === */
   'tz.menu': 'Time zone',
   'tz.title': 'Time zone',

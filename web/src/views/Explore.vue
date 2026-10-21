@@ -1003,7 +1003,7 @@ function firstAdminPage(): string {
   height: 34px;
   border-radius: 50%;
   border: 3px solid rgb(161 161 170 / 0.25); /* zinc-400/25 */
-  border-top-color: #2f6ceb; /* the product blue (--fe-primary) — this spinner sits outside .fe */
+  border-top-color: #FFC629; /* the product primary (--fe-primary) — this spinner sits outside .fe */
   animation: fx-explore-spin 0.7s linear infinite;
 }
 @keyframes fx-explore-spin {

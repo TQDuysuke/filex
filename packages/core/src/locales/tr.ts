@@ -534,6 +534,7 @@ export const tr: Record<string, string> = {
   'theme.name.contrast': 'Yüksek kontrast',
   'theme.name.gray': 'Yumuşak gri',
   'theme.name.terminal': 'Terminal yeşili',
+  'theme.name.aifs': 'AIFS Altın Sarısı',
   /* === zaman:z3 - saat dilimi seçici (gömme penceresi + web ayarları) === */
   'tz.menu': 'Saat dilimi',
   'tz.title': 'Saat dilimi',

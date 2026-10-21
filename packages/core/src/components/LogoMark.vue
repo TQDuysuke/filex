@@ -37,7 +37,7 @@
 
 <template>
   <svg viewBox="0 0 32 32" aria-hidden="true">
-    <rect width="32" height="32" rx="7" fill="var(--fe-primary, #2f6ceb)" />
+    <rect width="32" height="32" rx="7" fill="var(--fe-primary, #FFC629)" />
     <path
       d="M7 11a2 2 0 0 1 2-2h5l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11z"
       fill="none"

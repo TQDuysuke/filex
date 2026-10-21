@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"image"
 	"image/draw"
@@ -53,6 +54,7 @@ func NewAIFSHandler(
 		slog.Warn("[AIFS] Falling back to in-memory store for AIFS")
 		aifsStore = aifs.DefaultStoreInstance()
 	}
+	aifs.SetDefaultStoreInstance(aifsStore)
 	return &AIFSHandler{
 		Store:           store,
 		AifsStore:       aifsStore,
@@ -137,8 +139,8 @@ func (h *AIFSHandler) Status(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Auto-trigger background indexing if pending
-	if album.Status == "pending" {
+	// Auto-trigger background indexing if pending or stuck in indexing without active worker
+	if album.Status == "pending" || (album.Status == "indexing" && !h.Indexer.IsActive(album.ID)) {
 		_ = h.Indexer.StartIndexing(album.ID, h.Store, h.AifsStore, h.StorageResolver, h.Body, h.Notify)
 		album.Status = "indexing"
 	}
@@ -552,8 +554,8 @@ func (h *AIFSHandler) NodeStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Auto-trigger background indexing if pending
-	if album.Status == "pending" {
+	// Auto-trigger background indexing if pending or stuck in indexing without active worker
+	if album.Status == "pending" || (album.Status == "indexing" && !h.Indexer.IsActive(album.ID)) {
 		_ = h.Indexer.StartIndexing(album.ID, h.Store, h.AifsStore, h.StorageResolver, h.Body, h.Notify)
 		album.Status = "indexing"
 	}
@@ -631,4 +633,76 @@ func (h *AIFSHandler) IndexNode(w http.ResponseWriter, r *http.Request) {
 		"status":  "indexing",
 		"message": "AI face indexing started",
 	})
+}
+
+// OnWritten observes newly written files and automatically queues/indexes images if the directory has AIFS enabled.
+func (h *AIFSHandler) OnWritten(ctx context.Context, storageID int64, node *model.Node, origin string, replaced bool) {
+	if node == nil || node.ID == 0 || !aifs.IsImageNode(node) || node.ParentID == nil {
+		return
+	}
+
+	// Look up if parent directory (or an ancestor directory) is an AIFS-enabled album
+	var album *aifs.Album
+	currParentID := node.ParentID
+	for depth := 0; depth < 5 && currParentID != nil; depth++ {
+		alb, err := h.AifsStore.GetAlbumByNode(ctx, storageID, *currParentID)
+		if err == nil && alb != nil {
+			if alb.AIFSEnabled {
+				album = alb
+			}
+			break
+		}
+
+		// Also check if directory has an active share with AIFS enabled
+		shares, sErr := h.Store.ListSharesByNode(ctx, *currParentID)
+		if sErr == nil {
+			for _, sh := range shares {
+				if sh.RevokedAt == nil && sh.AIFSEnabled {
+					pNode, _ := h.Store.GetNode(ctx, *currParentID)
+					name := ""
+					if pNode != nil {
+						name = pNode.Name
+					}
+					syncedAlb, syncErr := aifs.SyncAlbumFromNode(ctx, h.Store, h.AifsStore, storageID, *currParentID, sh.Token, name)
+					if syncErr == nil && syncedAlb != nil && syncedAlb.AIFSEnabled {
+						album = syncedAlb
+					}
+					break
+				}
+			}
+		}
+		if album != nil {
+			break
+		}
+
+		pNode, err := h.Store.GetNode(ctx, *currParentID)
+		if err != nil || pNode == nil || pNode.ParentID == nil {
+			break
+		}
+		currParentID = pNode.ParentID
+	}
+
+	if album == nil || !album.AIFSEnabled {
+		return
+	}
+
+	hash := node.Etag
+	if hash == "" {
+		hash = "node_" + strconv.FormatInt(node.ID, 10) + "_" + strconv.FormatInt(node.Size, 10)
+	}
+
+	photo := &aifs.Photo{
+		NodeID:   node.ID,
+		Filename: node.Name,
+		FileHash: hash,
+		Status:   "pending",
+	}
+
+	if err := h.AifsStore.SyncPhotos(ctx, album.ID, []*aifs.Photo{photo}); err != nil {
+		slog.Warn("[AIFS] Auto-indexing: failed to sync photo", "album_id", album.ID, "node_id", node.ID, "err", err)
+		return
+	}
+
+	slog.Info("[AIFS] Auto-indexing new photo in AIFS album", "album_id", album.ID, "album_title", album.Title, "filename", node.Name)
+	_ = h.Indexer.StartIndexing(album.ID, h.Store, h.AifsStore, h.StorageResolver, h.Body, h.Notify)
 }

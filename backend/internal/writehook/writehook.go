@@ -122,11 +122,23 @@ type AfterWriteFunc func(ctx context.Context, storageID int64, node *model.Node,
 // E2E key-file watch (keyfilewatch.Watch): the server's own audit row for a
 // rewritten `.filex-e2e.json`, and the deletion of the key file's old
 // versions when a key slot changed.
-var afterWrite AfterWriteFunc
+var afterWrites []AfterWriteFunc
+
+// RegisterAfterWrite registers an after-write observer. Call at boot; nil is ignored.
+func RegisterAfterWrite(f AfterWriteFunc) {
+	if f != nil {
+		afterWrites = append(afterWrites, f)
+	}
+}
 
 // ConfigureAfterWrite installs the process-wide after-write observer. Call
 // once at boot; nil disables it.
-func ConfigureAfterWrite(f AfterWriteFunc) { afterWrite = f }
+func ConfigureAfterWrite(f AfterWriteFunc) {
+	afterWrites = nil
+	if f != nil {
+		afterWrites = append(afterWrites, f)
+	}
+}
 
 // ConfigureSaveScan installs the debounced scan sink OnFileSaved uses. Call
 // once at boot, beside Configure. nil is legal and means "no debounced sink":
@@ -221,8 +233,8 @@ func EmitWritten(ctx context.Context, storageID int64, node *model.Node, origin 
 		Node:   &notify.NodeRef{StorageID: storageID, Path: node.Path, Name: node.Name, Size: node.Size},
 		Target: notify.FileTarget(node.Path),
 	})
-	if afterWrite != nil {
-		afterWrite(ctx, storageID, node, origin, kind == Replaced)
+	for _, fn := range afterWrites {
+		fn(ctx, storageID, node, origin, kind == Replaced)
 	}
 }
 
@@ -253,8 +265,8 @@ func EmitWrittenFor(ctx context.Context, storageID int64, node *model.Node, orig
 			NoWebhook: i > 0,
 		})
 	}
-	if afterWrite != nil {
-		afterWrite(ctx, storageID, node, origin, kind == Replaced)
+	for _, fn := range afterWrites {
+		fn(ctx, storageID, node, origin, kind == Replaced)
 	}
 }
 

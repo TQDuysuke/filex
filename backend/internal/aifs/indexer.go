@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/brf-tech/filex/backend/internal/db"
@@ -12,6 +13,11 @@ import (
 	"github.com/brf-tech/filex/backend/internal/model"
 	"github.com/brf-tech/filex/backend/internal/notify"
 	"github.com/brf-tech/filex/backend/internal/storage"
+)
+
+var (
+	globalIndexerMu sync.Mutex
+	globalActive    = make(map[int64]bool)
 )
 
 // Indexer coordinates the AI indexing worker for photo albums.
@@ -24,7 +30,16 @@ func NewIndexer(client *Client) *Indexer {
 	if client == nil {
 		client = NewClient()
 	}
-	return &Indexer{client: client}
+	return &Indexer{
+		client: client,
+	}
+}
+
+// IsActive reports whether a background indexing task is currently running for the album.
+func (idx *Indexer) IsActive(albumID int64) bool {
+	globalIndexerMu.Lock()
+	defer globalIndexerMu.Unlock()
+	return globalActive[albumID]
 }
 
 // StartIndexing initiates the background AI indexing process for an album.
@@ -36,17 +51,36 @@ func (idx *Indexer) StartIndexing(
 	bodyResolver *filebody.Resolver,
 	notifySvc notify.Service,
 ) error {
+	globalIndexerMu.Lock()
+	if globalActive[albumID] {
+		globalIndexerMu.Unlock()
+		slog.Debug("[AIFS] Indexing worker already active for album", "album_id", albumID)
+		return nil
+	}
+	globalActive[albumID] = true
+	globalIndexerMu.Unlock()
+
 	if aifsStore == nil {
 		aifsStore = DefaultStoreInstance()
 	}
 
 	album, err := aifsStore.GetAlbum(context.Background(), albumID)
 	if err != nil {
+		globalIndexerMu.Lock()
+		delete(globalActive, albumID)
+		globalIndexerMu.Unlock()
 		return fmt.Errorf("aifs indexer: album %d not found: %w", albumID, err)
 	}
 
 	// Launch worker in background goroutine with detached context
-	go idx.runIndexing(album, filexStore, aifsStore, storageResolver, bodyResolver, notifySvc)
+	go func() {
+		defer func() {
+			globalIndexerMu.Lock()
+			delete(globalActive, albumID)
+			globalIndexerMu.Unlock()
+		}()
+		idx.runIndexing(album, filexStore, aifsStore, storageResolver, bodyResolver, notifySvc)
+	}()
 	return nil
 }
 
@@ -64,68 +98,73 @@ func (idx *Indexer) runIndexing(
 	slog.Info("[AIFS] Starting AI Indexing for album", "album_id", album.ID, "title", album.Title)
 	_ = aifsStore.UpdateAlbumStatus(ctx, album.ID, "indexing", album.IndexedPhotos, album.DetectedFaces)
 
-	pending, err := aifsStore.GetPendingPhotos(ctx, album.ID)
-	if err != nil {
-		slog.Error("[AIFS] Failed to get pending photos", "album_id", album.ID, "error", err)
-		_ = aifsStore.UpdateAlbumStatus(ctx, album.ID, "failed", album.IndexedPhotos, album.DetectedFaces)
-		return
-	}
-
 	indexedCount := album.IndexedPhotos
 	detectedFaces := album.DetectedFaces
 
-	for _, p := range pending {
-		select {
-		case <-ctx.Done():
-			slog.Warn("[AIFS] Indexing timeout or cancelled", "album_id", album.ID)
+	for {
+		pending, err := aifsStore.GetPendingPhotos(ctx, album.ID)
+		if err != nil {
+			slog.Error("[AIFS] Failed to get pending photos", "album_id", album.ID, "error", err)
+			_ = aifsStore.UpdateAlbumStatus(ctx, album.ID, "failed", indexedCount, detectedFaces)
 			return
-		default:
+		}
+		if len(pending) == 0 {
+			break
 		}
 
-		node, err := filexStore.GetNode(ctx, p.NodeID)
-		if err != nil || node == nil {
-			slog.Warn("[AIFS] File node missing", "node_id", p.NodeID)
-			_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, 0, "failed", "node not found")
-			continue
-		}
-
-		imgBytes, err := readNodeBytes(ctx, node, storageResolver, bodyResolver)
-		if err != nil {
-			slog.Warn("[AIFS] Failed to read image bytes", "filename", node.Name, "error", err)
-			_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, 0, "failed", err.Error())
-			continue
-		}
-
-		// Call InsightFace detection and embedding
-		detResult, err := idx.client.DetectAndEmbed(ctx, imgBytes, node.Name)
-		if err != nil {
-			slog.Warn("[AIFS] AI detection failed", "filename", node.Name, "error", err)
-			_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, 0, "failed", err.Error())
-			continue
-		}
-
-		var faces []*Face
-		for _, f := range detResult.Faces {
-			faces = append(faces, &Face{
-				PhotoID:    p.ID,
-				AlbumID:    album.ID,
-				BBox:       f.BBox,
-				Confidence: f.Confidence,
-				Embedding:  f.Embedding,
-			})
-		}
-
-		if len(faces) > 0 {
-			if err := aifsStore.AddFaces(ctx, faces); err != nil {
-				slog.Error("[AIFS] Failed to save detected faces", "photo_id", p.ID, "error", err)
+		for _, p := range pending {
+			select {
+			case <-ctx.Done():
+				slog.Warn("[AIFS] Indexing timeout or cancelled", "album_id", album.ID)
+				return
+			default:
 			}
+
+			node, err := filexStore.GetNode(ctx, p.NodeID)
+			if err != nil || node == nil {
+				slog.Warn("[AIFS] File node missing", "node_id", p.NodeID)
+				_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, 0, "failed", "node not found")
+				continue
+			}
+
+			imgBytes, err := readNodeBytes(ctx, node, storageResolver, bodyResolver)
+			if err != nil {
+				slog.Warn("[AIFS] Failed to read image bytes", "filename", node.Name, "error", err)
+				_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, 0, "failed", err.Error())
+				continue
+			}
+
+			// Call InsightFace detection and embedding
+			detResult, err := idx.client.DetectAndEmbed(ctx, imgBytes, node.Name)
+			if err != nil {
+				slog.Warn("[AIFS] AI detection failed", "filename", node.Name, "error", err)
+				_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, 0, "failed", err.Error())
+				continue
+			}
+
+			var faces []*Face
+			for _, f := range detResult.Faces {
+				faces = append(faces, &Face{
+					PhotoID:    p.ID,
+					AlbumID:    album.ID,
+					BBox:       f.BBox,
+					Confidence: f.Confidence,
+					Embedding:  f.Embedding,
+				})
+			}
+
+			if len(faces) > 0 {
+				if err := aifsStore.AddFaces(ctx, faces); err != nil {
+					slog.Error("[AIFS] Failed to save detected faces", "photo_id", p.ID, "error", err)
+				}
+			}
+
+			_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, len(faces), "completed", "")
+			indexedCount++
+			detectedFaces += len(faces)
+
+			_ = aifsStore.UpdateAlbumStatus(ctx, album.ID, "indexing", indexedCount, detectedFaces)
 		}
-
-		_ = aifsStore.UpdatePhotoIndexed(ctx, p.ID, len(faces), "completed", "")
-		indexedCount++
-		detectedFaces += len(faces)
-
-		_ = aifsStore.UpdateAlbumStatus(ctx, album.ID, "indexing", indexedCount, detectedFaces)
 	}
 
 	// Mark album as ready

@@ -329,6 +329,9 @@ const coverStyleChoices = computed<SelectOption[]>(() => [
   { value: 'split', label: 'Split (Two-Column Layout)' },
 ]);
 
+const overwriteExistingShare = ref(true);
+const existingAlbumData = ref<any>(null);
+
 async function checkExistingAlbum() {
   if (!props.isDir) return;
   try {
@@ -347,6 +350,7 @@ async function checkExistingAlbum() {
           const json = await res.json();
           const alb = json?.data?.album || json?.album || (json?.data?.type === 'ALBUM' ? json.data : null);
           if (alb) {
+            existingAlbumData.value = alb;
             if (alb.title) albumTitle.value = alb.title;
             if (alb.clientName) albumClientName.value = alb.clientName;
             if (alb.description) albumDescription.value = alb.description;
@@ -725,7 +729,13 @@ async function createLink() {
   shareErr.value = '';
   shareMailNotice.value = '';
   try {
-    for (const s of downloadShares.value) await props.api.revokeShare(s.uuid);
+    const hasExisting = downloadShares.value.length > 0;
+    const existingShare = hasExisting ? downloadShares.value[0] : null;
+    const shouldOverwrite = hasExisting && overwriteExistingShare.value;
+
+    if (!shouldOverwrite) {
+      for (const s of downloadShares.value) await props.api.revokeShare(s.uuid);
+    }
     shareResult.value = null;
     let expIn: number | null = null;
     let expAt: string | null = null;
@@ -746,11 +756,13 @@ async function createLink() {
       // null says it explicitly and keeps the payload honest.
       max_downloads: shareMaxDl.value || null,
       aifs_enabled: aifsEnabled.value,
+      overwrite: shouldOverwrite,
+      ...(shouldOverwrite && existingShare ? { token: existingShare.uuid } : {}),
     });
     shareResult.value = {
       // The create answer's `uuid` IS the token (share.go shareCreateRespInner).
-      token: r.share.token ?? r.share.uuid,
-      url: toClientUrl(r.share.url, r.share.token ?? r.share.uuid, 's'),
+      token: (r.share as any).token ?? r.share.uuid,
+      url: toClientUrl(r.share.url, (r.share as any).token ?? r.share.uuid, 's'),
       pin: r.share.password_pin ?? null,
       expiresAt: r.share.expires_at ?? null,
       clamped: !!r.share.expiry_clamped,
@@ -767,7 +779,16 @@ async function createLink() {
           const ext = (f.extension || fn.split('.').pop() || '').toLowerCase();
           return imageExts.includes(ext) && f.type !== 'dir';
         });
-        const token = r.share.token ?? r.share.uuid;
+
+        // Preserve previous favorites if re-sharing / updating album!
+        const favMap = new Map<string, boolean>();
+        if (existingAlbumData.value?.items && Array.isArray(existingAlbumData.value.items)) {
+          for (const it of existingAlbumData.value.items) {
+            if (it.isFavorite) favMap.set(it.filename, true);
+          }
+        }
+
+        const token = (r.share as any).token ?? r.share.uuid;
         const items = imgEntries.map((f, i) => {
           const fn = String(f.basename || (f as any).name || '');
           return {
@@ -780,8 +801,8 @@ async function createLink() {
             thumbnailUrl: `/s/${token}/f/${encodeURIComponent(fn)}`,
             previewUrl: `/s/${token}/f/${encodeURIComponent(fn)}`,
             originalUrl: `/s/${token}/f/${encodeURIComponent(fn)}?download=1`,
-            isFavorite: false,
-            favoriteCount: 0,
+            isFavorite: favMap.get(fn) || false,
+            favoriteCount: favMap.get(fn) ? 1 : 0,
           };
         });
         const manifest = {
@@ -939,8 +960,8 @@ async function createDropLink() {
       drop_settings,
     });
     dropResult.value = {
-      token: r.share.token ?? r.share.uuid,
-      url: toClientUrl(r.share.url, r.share.token ?? r.share.uuid, 'd'),
+      token: (r.share as any).token ?? r.share.uuid,
+      url: toClientUrl(r.share.url, (r.share as any).token ?? r.share.uuid, 'd'),
       pin: r.share.password_pin ?? null,
       expiresAt: r.share.expires_at ?? null,
       clamped: !!r.share.expiry_clamped,
@@ -1290,6 +1311,17 @@ async function nativeShare(body: SheetWords | null) {
                 </label>
               </div>
               <p v-if="ttlHint" class="fe-share__hint" data-testid="share-ttl-hint">{{ ttlHint }}</p>
+              <div v-if="linkOn" class="fe-share__overwrite-toggle" style="margin: 12px 0 8px; padding: 10px 14px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(37, 99, 235, 0.2); border-radius: 8px; display: flex; align-items: center; gap: 10px;">
+                <input
+                  id="share-overwrite-chk"
+                  v-model="overwriteExistingShare"
+                  type="checkbox"
+                  style="width: 16px; height: 16px; cursor: pointer; accent-color: #2563eb;"
+                />
+                <label for="share-overwrite-chk" style="font-size: 13px; font-weight: 500; cursor: pointer; color: inherit;">
+                  Ghi đè cấu hình lên đường dẫn chia sẻ hiện có (giữ nguyên URL)
+                </label>
+              </div>
               <button
                 type="button"
                 class="fx-perm-create fe-share__btn fe-share__btn--primary fe-share__btn--wide"
@@ -1297,9 +1329,11 @@ async function nativeShare(body: SheetWords | null) {
                 :disabled="shareBusy"
                 @click="createLink"
               >
-                {{ linkOn ? t('access.ui.replace_link') : t('access.ui.create_link') }}
+                {{ linkOn && overwriteExistingShare ? 'Cập nhật liên kết chia sẻ' : (linkOn ? t('access.ui.replace_link') : t('access.ui.create_link')) }}
               </button>
-              <p v-if="linkOn" class="fe-share__hint" data-testid="share-replace-hint">{{ t('access.ui.replace_link_hint') }}</p>
+              <p v-if="linkOn" class="fe-share__hint" data-testid="share-replace-hint">
+                {{ linkOn && overwriteExistingShare ? 'Giữ nguyên đường dẫn chia sẻ hiện có và cập nhật cấu hình/album mà không làm hỏng link đã gửi.' : t('access.ui.replace_link_hint') }}
+              </p>
 
               <!-- ⚠ One message with the address IN it: the sentence used to
                    be two halves around a <strong>, which put a space before

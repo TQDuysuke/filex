@@ -73,6 +73,13 @@ func DefaultStoreInstance() Store {
 	return defaultStoreInstance
 }
 
+// SetDefaultStoreInstance sets the process-wide default AIFS store instance.
+func SetDefaultStoreInstance(s Store) {
+	if s != nil {
+		defaultStoreInstance = s
+	}
+}
+
 func (s *MemoryStore) GetOrCreateAlbum(ctx context.Context, storageID, nodeID int64, shareToken, title string) (*Album, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -187,8 +194,9 @@ func (s *MemoryStore) SyncPhotos(ctx context.Context, albumID int64, photos []*P
 			// Update filename or hash if changed
 			existing := s.photos[existingID]
 			existing.Filename = p.Filename
-			if p.FileHash != "" {
+			if p.FileHash != "" && p.FileHash != existing.FileHash {
 				existing.FileHash = p.FileHash
+				existing.Status = "pending"
 			}
 			existing.UpdatedAt = now
 			continue
@@ -322,6 +330,10 @@ func (s *SQLStore) GetOrCreateAlbum(ctx context.Context, storageID, nodeID int64
 			alb.Title = title
 			_, _ = s.db.ExecContext(ctx, `UPDATE aifs_albums SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, title, alb.ID)
 		}
+		if !alb.AIFSEnabled {
+			alb.AIFSEnabled = true
+			_, _ = s.db.ExecContext(ctx, `UPDATE aifs_albums SET aifs_enabled = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, alb.ID)
+		}
 		return &alb, nil
 	}
 
@@ -416,7 +428,7 @@ func (s *SQLStore) SyncPhotos(ctx context.Context, albumID int64, photos []*Phot
 		_, err := s.db.ExecContext(ctx,
 			`INSERT INTO aifs_photos (album_id, node_id, filename, file_hash, face_count, status, created_at, updated_at)
 			 VALUES (?, ?, ?, ?, 0, 'pending', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-			 ON CONFLICT(album_id, node_id) DO UPDATE SET filename = excluded.filename, file_hash = excluded.file_hash, updated_at = CURRENT_TIMESTAMP`,
+			 ON CONFLICT(album_id, node_id) DO UPDATE SET filename = excluded.filename, file_hash = excluded.file_hash, updated_at = CURRENT_TIMESTAMP, status = CASE WHEN aifs_photos.file_hash != excluded.file_hash THEN 'pending' ELSE aifs_photos.status END`,
 			albumID, p.NodeID, p.Filename, p.FileHash,
 		)
 		if err != nil {

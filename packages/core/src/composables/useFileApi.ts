@@ -1870,6 +1870,8 @@ export function useFileApi(config: ExplorerConfig) {
     max_uploads?: number | null;
     drop_settings?: Record<string, unknown> | null;
     aifs_enabled?: boolean;
+    overwrite?: boolean;
+    token?: string;
   }): Promise<{ share: ShareInfo & { url: string; path: string; filename: string; kind?: string; token?: string } }> {
     if (!endpoints.shareCreate) throw new Error('shareCreate endpoint not configured');
     return jsonFetch(endpoints.shareCreate, {

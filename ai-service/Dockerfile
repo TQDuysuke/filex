@@ -2,16 +2,22 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies for OpenCV and healthcheck
+# Install system dependencies for OpenCV, SSL certificates, and healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     libgl1 \
     libglib2.0-0 \
     curl \
+    && update-ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir \
+    --trusted-host pypi.org \
+    --trusted-host files.pythonhosted.org \
+    --trusted-host pypi.python.org \
+    -r requirements.txt
 
 COPY . .
 

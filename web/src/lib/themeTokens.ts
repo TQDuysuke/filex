@@ -204,7 +204,7 @@ export function deriveTokens(
   const bg = authored['--fe-bg'] ?? '#ffffff';
   const text = authored['--fe-text'] ?? '#000000';
   const border = authored['--fe-border'] ?? '#e5e7eb';
-  const primary = authored['--fe-primary'] ?? '#2f6ceb';
+  const primary = authored['--fe-primary'] ?? '#FFC629';
   const danger = authored['--fe-danger'] ?? '#dc2626';
   const ok = authored['--fe-ok'] ?? '#16a34a';
 

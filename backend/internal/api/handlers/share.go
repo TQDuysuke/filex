@@ -174,6 +174,8 @@ type shareCreateReq struct {
 	Kind         string          `json:"kind,omitempty"`
 	MaxUploads   int             `json:"max_uploads,omitempty"`
 	DropSettings json.RawMessage `json:"drop_settings,omitempty"`
+	Overwrite    *bool           `json:"overwrite,omitempty"`
+	Token        string          `json:"token,omitempty"`
 }
 
 // shareCreateRespInner is the payload nested under `share` in the
@@ -380,7 +382,32 @@ func (h *Share) HandleCreate(w http.ResponseWriter, r *http.Request) {
 	if gen := applyLinkPolicy(&opts, linkSettings(r.Context(), h.ACL), time.Now()); gen != "" {
 		pinGenerated = gen
 	}
-	sh, err := h.Service.Create(r.Context(), opts)
+
+	var sh *model.Share
+	isOverwrite := (req.Overwrite != nil && *req.Overwrite) || req.Token != ""
+	var existingShare *model.Share
+	if req.Token != "" {
+		existingShare, _ = h.Store.GetShareByToken(r.Context(), req.Token)
+	}
+	if existingShare == nil && isOverwrite {
+		shares, _ := h.Store.ListSharesByNode(r.Context(), nodeID)
+		for _, s := range shares {
+			if s.RevokedAt == nil {
+				existingShare = s
+				break
+			}
+		}
+	}
+
+	if req.AIFSEnabled != nil {
+		opts.AIFSEnabled = *req.AIFSEnabled
+	}
+
+	if existingShare != nil && isOverwrite {
+		sh, err = h.Service.Update(r.Context(), existingShare.ID, opts)
+	} else {
+		sh, err = h.Service.Create(r.Context(), opts)
+	}
 	if err != nil {
 		if share.IsPINLength(err) {
 			writePINLengthRefusal(w, r)

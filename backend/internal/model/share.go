@@ -58,6 +58,7 @@ type Share struct {
 	MaxUploads   *int    `json:"max_uploads,omitempty"`   // cap on total files received
 	UploadCount  int     `json:"upload_count"`            // files received so far
 	DropSettings *string `json:"drop_settings,omitempty"` // JSON limits blob (max_files, max_file_size_mb, allowed_ext, ask_name)
+	AIFSEnabled  bool    `json:"aifs_enabled,omitempty"`
 
 	// ── App-plugin page fields (migration 00046) ──
 	//

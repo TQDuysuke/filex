@@ -4,7 +4,7 @@
  * Exact implementation matching `web/sharing_source` (Vanilla & React templates):
  * - Full viewport edge-to-edge luxury editorial layout
  * - 4 Cover templates: Haduanh Luxury Hero, Editorial Serif, Minimal Rounded, Split Magazine
- * - Sticky navigation bar with title, metadata, and filter pills (Tất cả / Đã thích)
+ * - Sticky navigation bar with title, metadata, and filter pills (All / Favorites)
  * - Multi-column masonry photo grid with natural aspect ratios (no cropping)
  * - Heart favorites with localStorage persistence
  * - Full-screen lightbox with keyboard navigation (Esc, ArrowLeft, ArrowRight)
@@ -55,13 +55,107 @@ const showIosSaveModal = ref(false);
 const showQrModal = ref(false);
 const showMultiDl = ref(false);
 const showInfo = ref(false);
+const showMoreMenu = ref(false);
+const copiedLink = ref(false);
+const isDark = ref(false);
 const viewMode = ref<'standard' | 'large' | 'compact'>('standard');
 const aspectMode = ref<'natural' | 'square'>('natural');
+const cameraInputRef = ref<HTMLInputElement | null>(null);
+const aiSearchStep = ref('');
+
+function applyThemeClasses(dark: boolean) {
+  if (typeof document === 'undefined') return;
+  const html = document.documentElement;
+  const body = document.body;
+  if (dark) {
+    html.classList.add('dark');
+    html.classList.add('fe--theme-dark');
+    html.classList.remove('fe--theme-light');
+    body.classList.add('dark');
+    body.classList.add('fe--theme-dark');
+    body.classList.remove('fe--theme-light');
+    html.style.colorScheme = 'dark';
+    body.style.backgroundColor = '#0E0E0D';
+    body.style.color = '#F5F5F4';
+  } else {
+    html.classList.remove('dark');
+    html.classList.remove('fe--theme-dark');
+    html.classList.add('fe--theme-light');
+    body.classList.remove('dark');
+    body.classList.remove('fe--theme-dark');
+    body.classList.add('fe--theme-light');
+    html.style.colorScheme = 'light';
+    body.style.backgroundColor = '#FFFDF8';
+    body.style.color = '#171717';
+  }
+}
+
+function toggleDarkMode() {
+  isDark.value = !isDark.value;
+  try {
+    localStorage.setItem('filex.theme', isDark.value ? 'dark' : 'light');
+    localStorage.setItem('filex_theme_preference', isDark.value ? 'dark' : 'light');
+    localStorage.setItem('theme', isDark.value ? 'dark' : 'light');
+  } catch {}
+  applyThemeClasses(isDark.value);
+}
+
+function triggerCamera() {
+  cameraInputRef.value?.click();
+}
+
+function triggerGalleryUpload() {
+  selfieInputRef.value?.click();
+}
+
+function onSelfieFileChosen(e: Event) {
+  const target = e.target as HTMLInputElement;
+  if (target.files && target.files[0]) {
+    setSelfieFile(target.files[0]);
+  }
+}
+
+function handleCopyAlbumLink() {
+  if (typeof window !== 'undefined') {
+    void navigator.clipboard.writeText(window.location.href);
+    copiedLink.value = true;
+    showToast('Album link copied to clipboard!');
+    setTimeout(() => {
+      copiedLink.value = false;
+    }, 2500);
+  }
+}
+
+function handleDownloadFavorites() {
+  const favoriteItems = props.album.items.filter((item) => !!favoritesMap.value[item.id]);
+  if (favoriteItems.length === 0) {
+    showToast('No photos favorited yet. Add some photos to favorites first.');
+    return;
+  }
+  selectedItemIds.value = new Set(favoriteItems.map((i) => i.id));
+  handleBatchAction();
+}
+
+function onClickOutsideMenu(e: MouseEvent) {
+  if (showMoreMenu.value) {
+    const target = e.target as HTMLElement;
+    if (!target.closest('.nav-more-wrapper')) {
+      showMoreMenu.value = false;
+    }
+  }
+}
 
 // Clustered Faces State
 const clusteredFaces = ref<ClusteredFace[]>([]);
 const selectedFaceId = ref<number | string | null>(null);
 const loadingFaces = ref(false);
+
+const activeFaceCropUrl = computed(() => {
+  if (selectedFaceId.value === null) return '';
+  const found = clusteredFaces.value.find((f) => String(f.face_id) === String(selectedFaceId.value));
+  return found?.crop_url || '';
+});
+
 const token = computed<string>(() => {
   if (props.token) return props.token;
   if (typeof window !== 'undefined') {
@@ -71,6 +165,27 @@ const token = computed<string>(() => {
   return '';
 });
 const currentUrl = computed(() => (typeof window !== 'undefined' ? window.location.href : ''));
+
+function safePhotoUrl(rawUrl: string | undefined | null, filename?: string, isDownload = false): string {
+  const currentToken = token.value;
+  if (rawUrl && rawUrl.includes('/s/')) {
+    const match = rawUrl.match(/\/s\/[a-zA-Z0-9_\-]+\/f\/(.+)$/);
+    if (match && currentToken) {
+      const cleanPath = match[1].replace(/\?.*$/, '');
+      const query = isDownload ? '?download=1' : '';
+      return `/s/${currentToken}/f/${cleanPath}${query}`;
+    }
+  }
+  if (rawUrl && (rawUrl.startsWith('https://') || rawUrl.startsWith('http://')) && !rawUrl.includes('/s/')) {
+    return rawUrl;
+  }
+  if (filename && currentToken) {
+    const encoded = filename.split('/').map(encodeURIComponent).join('/');
+    const query = isDownload ? '?download=1' : '';
+    return `/s/${currentToken}/f/${encoded}${query}`;
+  }
+  return rawUrl || '';
+}
 
 // AI Face Search State
 const showAiModal = ref(false);
@@ -123,6 +238,111 @@ function selectAllItems() {
   }
 }
 
+function favoriteSelectedItems() {
+  if (selectedItemIds.value.size === 0) return;
+  const next = { ...favoritesMap.value };
+  selectedItemIds.value.forEach((id) => {
+    next[id] = true;
+  });
+  favoritesMap.value = next;
+  saveFavorites();
+  showToast(`Added ${selectedItemIds.value.size} photos to favorites.`);
+}
+
+function buildCSVFromItems(items: AlbumItem[], filenamePrefix: string) {
+  if (items.length === 0) return;
+
+  const escapeCSV = (val: any): string => {
+    if (val === null || val === undefined) return '""';
+    const str = String(val).replace(/"/g, '""');
+    return `"${str}"`;
+  };
+
+  const headers = [
+    'STT',
+    'Filename',
+    'Size',
+    'Size (Bytes)',
+    'Dimensions',
+    'Width (px)',
+    'Height (px)',
+    'Megapixels',
+    'Camera',
+    'Lens',
+    'Aperture',
+    'Shutter Speed',
+    'ISO',
+    'Focal Length',
+    'Taken At',
+    'Preview URL',
+    'Original URL',
+  ];
+
+  const rows = items.map((item, index) => {
+    const mp = getMegapixels(item.width, item.height);
+    const sizeFmt = formatFileSize(item.size);
+    const dimensions = item.width && item.height ? `${item.width}x${item.height}` : '';
+    const dateTaken = item.taken_at ? new Date(item.taken_at).toLocaleString('vi-VN') : '';
+    const previewUrl = item.previewUrl || item.thumbnailUrl || '';
+    const origUrl = item.originalUrl || previewUrl;
+
+    return [
+      escapeCSV(index + 1),
+      escapeCSV(item.filename),
+      escapeCSV(sizeFmt),
+      escapeCSV(item.size ?? ''),
+      escapeCSV(dimensions),
+      escapeCSV(item.width ?? ''),
+      escapeCSV(item.height ?? ''),
+      escapeCSV(mp),
+      escapeCSV(item.camera ?? ''),
+      escapeCSV(item.lens ?? ''),
+      escapeCSV(item.aperture ?? ''),
+      escapeCSV(item.shutter_speed ?? ''),
+      escapeCSV(item.iso ?? ''),
+      escapeCSV(item.focal_length ?? ''),
+      escapeCSV(dateTaken),
+      escapeCSV(previewUrl),
+      escapeCSV(origUrl),
+    ].join(',');
+  });
+
+  const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const safeTitle = (props.album.title || 'Album').replace(/[/\\?%*:|"<>]/g, '_');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `${safeTitle}_${filenamePrefix}_${dateStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => {
+    if (document.body.contains(a)) document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
+function exportFavoritesToCSV() {
+  const favoriteItems = props.album.items.filter((item) => !!favoritesMap.value[item.id]);
+  if (favoriteItems.length === 0) {
+    showToast('No photos favorited yet. Add some photos to favorites first.');
+    return;
+  }
+  buildCSVFromItems(favoriteItems, 'Favorites');
+  showToast(`Exported ${favoriteItems.length} favorited photos to CSV!`);
+}
+
+function exportSelectedToCSV() {
+  const selectedItems = props.album.items.filter((item) => selectedItemIds.value.has(item.id));
+  if (selectedItems.length === 0) {
+    showToast('No photos selected to export!');
+    return;
+  }
+  buildCSVFromItems(selectedItems, 'Selected');
+  showToast(`Exported ${selectedItems.length} selected photos to CSV!`);
+}
+
 // Touch Swipe navigation for mobile
 const touchStartX = ref<number | null>(null);
 const touchStartY = ref<number | null>(null);
@@ -149,7 +369,7 @@ function onTouchEnd(e: TouchEvent) {
 
 async function preloadPhotoFile(item: AlbumItem): Promise<File | null> {
   if (readyFiles.value[item.id]) return readyFiles.value[item.id];
-  const url = item.originalUrl || item.previewUrl || item.thumbnailUrl;
+  const url = safePhotoUrl(item.originalUrl || item.previewUrl || item.thumbnailUrl, item.filename);
   if (!url) return null;
   try {
     const res = await fetch(url);
@@ -170,7 +390,7 @@ async function preloadPhotoFile(item: AlbumItem): Promise<File | null> {
 
 function triggerDirectDownload(photo: AlbumItem) {
   const safeFilename = photo.filename || `photo_${photo.id}.jpg`;
-  const url = photo.originalUrl || photo.previewUrl || photo.thumbnailUrl || '';
+  const url = safePhotoUrl(photo.originalUrl || photo.previewUrl || photo.thumbnailUrl, photo.filename, true);
   if (!url) return;
   const a = document.createElement('a');
   a.href = url;
@@ -183,7 +403,8 @@ function triggerDirectDownload(photo: AlbumItem) {
 }
 
 function copyPhotoLink(item: AlbumItem) {
-  const url = item.originalUrl || item.previewUrl || window.location.href;
+  const relUrl = safePhotoUrl(item.originalUrl || item.previewUrl, item.filename);
+  const url = typeof window !== 'undefined' ? `${window.location.origin}${relUrl}` : relUrl;
   void navigator.clipboard.writeText(url);
   showToast('Link copied');
 }
@@ -212,7 +433,7 @@ function formatFileSize(bytes?: number | null): string {
 async function downloadPhoto(item: AlbumItem, e?: Event) {
   if (e) e.stopPropagation();
   if (isDownloading.value) return;
-  const url = item.originalUrl || item.previewUrl || item.thumbnailUrl;
+  const url = safePhotoUrl(item.originalUrl || item.previewUrl || item.thumbnailUrl, item.filename, true);
   if (!url) return;
 
   if (isIOS.value && typeof navigator !== 'undefined' && navigator.share) {
@@ -288,23 +509,27 @@ function clearSelfie() {
   aiSelfieFile.value = null;
   aiSelfiePreview.value = '';
   aiSearchError.value = '';
+  aiSearchStep.value = '';
   if (selfieInputRef.value) selfieInputRef.value.value = '';
+  if (cameraInputRef.value) cameraInputRef.value.value = '';
 }
 
 async function runSelfieSearch() {
   if (!aiSelfieFile.value || !token.value) return;
   aiSearching.value = true;
   aiSearchError.value = '';
+  aiSearchStep.value = 'Uploading selfie photo...';
   try {
     const formData = new FormData();
     formData.append('file', aiSelfieFile.value);
+    aiSearchStep.value = 'AI is scanning and matching faces...';
     const res = await fetch(`/api/public/s/${token.value}/face-search`, {
       method: 'POST',
       body: formData,
     });
     if (!res.ok) {
       const errJson = await res.json().catch(() => null);
-      throw new Error(errJson?.error || `Search failed: HTTP ${res.status}`);
+      throw new Error(errJson?.error || `Face search failed: HTTP ${res.status}`);
     }
     const data = await res.json();
     const map: Record<string, { similarity: number; confidence: number }> = {};
@@ -323,15 +548,16 @@ async function runSelfieSearch() {
     if (count > 0) {
       filterMode.value = 'AI_MATCHES';
       showAiModal.value = false;
-      showToast(`Found ${count} matching photos`);
+      showToast(`Found ${count} photos of you!`);
       scrollToGallery();
     } else {
       aiSearchError.value = 'No matching faces found in this album.';
     }
   } catch (err: any) {
-    aiSearchError.value = err?.message || 'Error occurred while searching';
+    aiSearchError.value = err?.message || 'Error occurred during face search.';
   } finally {
     aiSearching.value = false;
+    aiSearchStep.value = '';
   }
 }
 
@@ -475,9 +701,9 @@ const totalFavorites = computed(() => {
 });
 
 const coverImageSrc = computed(() => {
-  if (props.album.coverUrl) return props.album.coverUrl;
+  if (props.album.coverUrl) return safePhotoUrl(props.album.coverUrl);
   const first = props.album.items[0];
-  return first ? (first.originalUrl || first.previewUrl || first.thumbnailUrl || '') : '';
+  return first ? safePhotoUrl(first.originalUrl || first.previewUrl || first.thumbnailUrl, first.filename) : '';
 });
 
 const coverStyle = computed(() => {
@@ -505,6 +731,7 @@ function scrollToGallery() {
 // Lightbox navigation
 function openLightbox(index: number) {
   activeLightboxIndex.value = index;
+  isUiHidden.value = false;
 }
 
 function closeLightbox() {
@@ -555,13 +782,13 @@ async function loadPhotoExif(item: AlbumItem) {
     applyExifToItem(item, exifCache.value[id]);
     return;
   }
-  const url = item.originalUrl || item.previewUrl || item.thumbnailUrl;
+  const url = safePhotoUrl(item.originalUrl || item.previewUrl || item.thumbnailUrl, item.filename);
   if (!url) return;
   loadingExif.value = true;
   try {
     const meta = await fetchAndParseExif(url);
     if (meta) {
-      exifCache.value[id] = meta;
+      exifCache.value = { ...exifCache.value, [id]: meta };
       applyExifToItem(item, meta);
     }
   } catch (err) {
@@ -585,6 +812,12 @@ const currentLightboxItem = computed(() => {
   return displayItems.value[activeLightboxIndex.value] || null;
 });
 
+const currentExif = computed<ExifMetadata | null>(() => {
+  const item = currentLightboxItem.value;
+  if (!item) return null;
+  return exifCache.value[item.id] || null;
+});
+
 const currentPhotoFaces = computed(() => {
   const item = currentLightboxItem.value;
   if (!item) return [];
@@ -600,6 +833,46 @@ const currentPhotoFaces = computed(() => {
       id: cf.face_id,
       crop_url: cf.crop_url,
     }));
+});
+
+const showFaceFrames = ref(true);
+
+interface FaceBoxDisplay {
+  id: number | string;
+  style: Record<string, string>;
+}
+
+const currentItemFaceBoxes = computed<FaceBoxDisplay[]>(() => {
+  const item = currentLightboxItem.value;
+  if (!item) return [];
+
+  const result: FaceBoxDisplay[] = [];
+  if (Array.isArray(item.faces)) {
+    for (const f of item.faces) {
+      if (f.bbox) {
+        const { x, y, width, height } = f.bbox;
+        const isNorm = width <= 1.05 && height <= 1.05;
+        const imgW = isNorm ? 1 : (item.width || 1000);
+        const imgH = isNorm ? 1 : (item.height || 1000);
+
+        const leftPct = (x / imgW) * 100;
+        const topPct = (y / imgH) * 100;
+        const widthPct = (width / imgW) * 100;
+        const heightPct = (height / imgH) * 100;
+
+        result.push({
+          id: f.id,
+          style: {
+            left: `${leftPct.toFixed(2)}%`,
+            top: `${topPct.toFixed(2)}%`,
+            width: `${widthPct.toFixed(2)}%`,
+            height: `${heightPct.toFixed(2)}%`,
+          },
+        });
+      }
+    }
+  }
+  return result;
 });
 
 watch(currentLightboxItem, (item) => {
@@ -623,15 +896,85 @@ watch(currentLightboxItem, (item) => {
 
 function onKeydown(e: KeyboardEvent) {
   if (activeLightboxIndex.value === null) return;
-  if (e.key === 'Escape') closeLightbox();
-  else if (e.key === 'ArrowLeft') prevLightbox();
-  else if (e.key === 'ArrowRight') nextLightbox();
+  if (e.key === 'Escape') {
+    if (showInfo.value) {
+      showInfo.value = false;
+    } else if (isUiHidden.value) {
+      isUiHidden.value = false;
+    } else {
+      closeLightbox();
+    }
+  } else if (e.key === 'ArrowLeft') {
+    prevLightbox();
+  } else if (e.key === 'ArrowRight') {
+    nextLightbox();
+  } else if (e.key === 'f' || e.key === 'F' || e.key === ' ') {
+    if (activeLightboxIndex.value !== null) {
+      toggleUi();
+    }
+  }
+}
+
+const isLoadingGallery = ref(true);
+const isUiHidden = ref(false);
+
+function toggleUi() {
+  isUiHidden.value = !isUiHidden.value;
 }
 
 onMounted(() => {
   isIOS.value = detectIsIOS();
   loadFavorites();
+
+  // Smooth Preload for Cover Image & First Photos (Zero Layout Jitter)
+  const preloadUrls: string[] = [];
+  if (coverImageSrc.value) preloadUrls.push(coverImageSrc.value);
+  props.album.items.slice(0, 16).forEach((item) => {
+    const u = safePhotoUrl(item.previewUrl || item.thumbnailUrl, item.filename);
+    if (u) preloadUrls.push(u);
+  });
+
+  const preloadPromise = Promise.allSettled(
+    preloadUrls.map(
+      (url) =>
+        new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            if ('decode' in img) {
+              img.decode().then(() => resolve()).catch(() => resolve());
+            } else {
+              resolve();
+            }
+          };
+          img.onerror = () => resolve();
+          img.src = url;
+        }),
+    ),
+  );
+
+  // Guaranteed minimum loading duration to ensure smooth, stable initial render
+  const minTimer = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+  void Promise.race([
+    Promise.all([preloadPromise, minTimer]),
+    new Promise<void>((resolve) => setTimeout(resolve, 4000)),
+  ]).then(() => {
+    isLoadingGallery.value = false;
+  });
+  if (typeof document !== 'undefined') {
+    const saved = localStorage.getItem('filex_theme_preference') || localStorage.getItem('theme');
+    if (saved === 'dark') {
+      isDark.value = true;
+    } else if (saved === 'light') {
+      isDark.value = false;
+    } else {
+      isDark.value = document.documentElement.classList.contains('dark') ||
+                     document.documentElement.classList.contains('fe--theme-dark') ||
+                     window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    applyThemeClasses(isDark.value);
+  }
   window.addEventListener('keydown', onKeydown);
+  window.addEventListener('click', onClickOutsideMenu);
   void fetchAifsStatus();
   void fetchClusteredFaces();
   statusPollTimer = setInterval(() => {
@@ -643,6 +986,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeydown);
+  window.removeEventListener('click', onClickOutsideMenu);
   if (toastTimer) clearTimeout(toastTimer);
   if (statusPollTimer) clearInterval(statusPollTimer);
 });
@@ -653,7 +997,30 @@ watch(() => props.album, () => {
 </script>
 
 <template>
-  <div class="fe-album-root">
+  <div class="fe-album-root" :class="{ dark: isDark }">
+    <!-- LUXURY LOADING SPLASH SCREEN (Zero Layout Jitter) -->
+    <transition name="fe-splash-fade">
+      <div v-if="isLoadingGallery" class="fe-gallery-splash" :class="{ dark: isDark }">
+        <div class="splash-content">
+          <div class="splash-logo-box">
+            <img
+              v-if="album.custom_logo_url || album.customLogoUrl"
+              :src="album.custom_logo_url || album.customLogoUrl"
+              :alt="album.title || album.name || 'Logo'"
+              class="splash-logo-img"
+            />
+            <div v-else class="splash-logo-text">
+              <span>{{ album.studio_name || album.studioName || 'TQD' }}</span>
+              <span class="splash-gold-dot">.</span>
+            </div>
+          </div>
+          <h2 class="splash-title">{{ album.title || album.name || 'Photo Album' }}</h2>
+          <p v-if="album.clientName || album.client_name" class="splash-client">{{ album.clientName || album.client_name }}</p>
+          <div class="splash-gold-spinner"></div>
+          <div class="splash-subtext">Preparing photo collection...</div>
+        </div>
+      </div>
+    </transition>
     <!-- Toast Notification -->
     <transition name="fe-album-fade">
       <div v-if="toastMsg" class="fe-album-toast" role="status">
@@ -662,10 +1029,10 @@ watch(() => props.album, () => {
     </transition>
 
     <!-- ========================================================================= -->
-    <!-- 1. HERO COVER SECTION (Tuỳ theo coverStyle: haduanh, editorial, minimal, split) -->
+    <!-- 1. HERO COVER SECTION (coverStyle: haduanh, editorial, minimal, split) -->
     <!-- ========================================================================= -->
 
-    <!-- TEMPLATE 1: HADUANH LUXURY HERO (Chuẩn phong cách tạp chí cao cấp) -->
+    <!-- TEMPLATE 1: HADUANH LUXURY HERO (Luxury editorial hero style) -->
     <header v-if="coverStyle === 'haduanh'" class="hero-haduanh">
       <img v-if="coverImageSrc" class="hero-bg" :src="coverImageSrc" :alt="album.title" />
       <div class="hero-overlay-vignette"></div>
@@ -697,7 +1064,7 @@ watch(() => props.album, () => {
       </div>
     </header>
 
-    <!-- TEMPLATE 2: EDITORIAL SERIF (Căn giữa nghệ thuật) -->
+    <!-- TEMPLATE 2: EDITORIAL SERIF (Centered artistic serif) -->
     <header v-else-if="coverStyle === 'editorial'" class="hero-editorial">
       <img v-if="coverImageSrc" class="hero-editorial-bg" :src="coverImageSrc" :alt="album.title" />
       <div class="hero-editorial-overlay"></div>
@@ -765,181 +1132,314 @@ watch(() => props.album, () => {
     </header>
 
     <!-- ========================================================================= -->
-    <!-- 2. STICKY NAVBAR (Album title, photo count, filter All / Favorites)        -->
+    <!-- 2. STICKY NAVBAR (Album title, All/Favorites filter, Select button, More menu) -->
     <!-- ========================================================================= -->
     <nav id="feAlbumNav" class="gallery-nav">
       <div class="gallery-nav-inner">
-        <div>
-          <h2 class="gallery-nav-title">{{ album.title }}</h2>
-          <p class="gallery-nav-meta">
-            {{ album.items.length }} photos · {{ totalFavorites }} favorited
-          </p>
-        </div>
+        <!-- Left: Album title, meta & filter pills -->
+        <div class="gallery-nav-left">
+          <div class="gallery-nav-title-group">
+            <h2 class="gallery-nav-title">{{ album.title }}</h2>
+            <p class="gallery-nav-meta">
+              {{ album.items.length }} {{ album.items.length === 1 ? 'photo' : 'photos' }}
+              <template v-if="totalFavorites > 0">
+                · <span class="gallery-nav-fav-count">{{ totalFavorites }} favorited</span>
+              </template>
+              <template v-if="isSelectMode && selectedItemIds.size > 0">
+                · <span class="gallery-nav-select-count">{{ selectedItemIds.size }} selected</span>
+              </template>
+              <template v-if="selectedFaceId !== null">
+                · <span class="gallery-nav-ai-count">{{ displayItems.length }} {{ displayItems.length === 1 ? 'photo' : 'photos' }} found</span>
+              </template>
+            </p>
+          </div>
 
-        <!-- Filter Pills & Action Buttons -->
-        <div class="gallery-nav-actions">
+          <!-- Filter Pills: All / Favorites / Found -->
           <div class="filter-pills">
             <button
               type="button"
               class="filter-btn"
-              :class="{ active: filterMode === 'ALL' }"
-              @click="filterMode = 'ALL'"
+              :class="{ active: filterMode === 'ALL' && selectedFaceId === null }"
+              @click="clearFaceFilter(); filterMode = 'ALL'"
             >
               All ({{ album.items.length }})
             </button>
             <button
               type="button"
-              class="filter-btn"
+              class="filter-btn filter-btn--fav"
               :class="{ active: filterMode === 'FAVORITES' }"
               @click="filterMode = 'FAVORITES'"
             >
-              <svg viewBox="0 0 24 24" width="14" height="14" :fill="filterMode === 'FAVORITES' ? '#ef4444' : 'currentColor'">
+              <svg viewBox="0 0 24 24" width="14" height="14" :fill="filterMode === 'FAVORITES' ? (isDark ? '#FFFFFF' : '#171717') : 'none'" stroke="currentColor" stroke-width="2">
                 <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
               </svg>
-              Favorites ({{ totalFavorites }})
+              <span>Favorites</span>
+              <span class="filter-fav-badge">{{ totalFavorites }}</span>
             </button>
             <button
-              v-if="aiMatchCount > 0"
+              v-if="selectedFaceId !== null || aiMatchCount > 0"
               type="button"
-              class="filter-btn filter-btn--ai"
-              :class="{ active: filterMode === 'AI_MATCHES' }"
-              @click="filterMode = 'AI_MATCHES'"
+              class="filter-btn filter-btn--ai active"
+              title="Filtered by face - Click to view all"
+              @click="clearFaceFilter"
             >
-              Matched Photos ({{ aiMatchCount }})
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="7" r="4"/>
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+              </svg>
+              <span>Found ({{ displayItems.length }})</span>
+              <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
             </button>
           </div>
+        </div>
 
-          <!-- View Controls: Grid Density & Aspect Ratio -->
-          <div class="view-density-group">
+        <!-- Right: Action buttons (Select & "...") -->
+        <div class="gallery-nav-actions">
+          <!-- When in Select Mode -->
+          <template v-if="isSelectMode">
+            <span class="nav-selected-badge">{{ selectedItemIds.size }} selected</span>
             <button
               type="button"
-              class="density-btn"
-              :class="{ active: viewMode === 'standard' }"
-              title="Standard Grid"
-              @click="viewMode = 'standard'"
+              class="nav-btn-done"
+              @click="toggleSelectMode"
             >
-              Standard
+              Xong
             </button>
+          </template>
+
+          <!-- Normal mode: Select button -->
+          <template v-else>
             <button
               type="button"
-              class="density-btn"
-              :class="{ active: viewMode === 'large' }"
-              title="Large Grid"
-              @click="viewMode = 'large'"
+              class="nav-btn-select"
+              title="Select multiple photos to download"
+              @click="toggleSelectMode"
             >
-              Large
+              <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="9 11 12 14 22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+              <span>Select</span>
             </button>
+          </template>
+
+          <!-- The "..." More Menu (Advanced features & photographer tools) -->
+          <div class="nav-more-wrapper">
             <button
               type="button"
-              class="density-btn"
-              :class="{ active: viewMode === 'compact' }"
-              title="Compact Grid"
-              @click="viewMode = 'compact'"
+              class="nav-btn-more"
+              :class="{ active: showMoreMenu }"
+              title="More options"
+              aria-label="More options"
+              @click.stop="showMoreMenu = !showMoreMenu"
             >
-              Compact
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                <circle cx="5" cy="12" r="2"/>
+                <circle cx="12" cy="12" r="2"/>
+                <circle cx="19" cy="12" r="2"/>
+              </svg>
             </button>
+
+            <!-- Dropdown Menu -->
+            <transition name="fe-menu-pop">
+              <div v-if="showMoreMenu" class="nav-more-dropdown" @click.stop>
+                <!-- Share album link -->
+                <button
+                  type="button"
+                  class="dropdown-item"
+                  @click="handleCopyAlbumLink(); showMoreMenu = false"
+                >
+                  <div class="dropdown-item-left">
+                    <svg v-if="copiedLink" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#22c55e" stroke-width="2.5">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                    </svg>
+                    <span>{{ copiedLink ? 'Link copied!' : 'Share album link' }}</span>
+                  </div>
+                </button>
+
+                <!-- QR code for mobile -->
+                <button
+                  type="button"
+                  class="dropdown-item"
+                  @click="showQrModal = true; showMoreMenu = false"
+                >
+                  <div class="dropdown-item-left">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="7" height="7"></rect>
+                      <rect x="14" y="3" width="7" height="7"></rect>
+                      <rect x="14" y="14" width="7" height="7"></rect>
+                      <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>QR code for mobile</span>
+                  </div>
+                </button>
+
+                <!-- Download full album (ZIP) -->
+                <a
+                  v-if="zipUrl"
+                  :href="zipUrl"
+                  class="dropdown-item"
+                  download
+                  @click="showMoreMenu = false"
+                >
+                  <div class="dropdown-item-left">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                    </svg>
+                    <span>Download full album (ZIP)</span>
+                  </div>
+                  <span class="dropdown-badge font-mono">({{ album.items.length }})</span>
+                </a>
+
+                <!-- Download favorited photos -->
+                <button
+                  v-if="totalFavorites > 0"
+                  type="button"
+                  class="dropdown-item dropdown-item--fav"
+                  @click="handleDownloadFavorites(); showMoreMenu = false"
+                >
+                  <div class="dropdown-item-left">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" stroke="currentColor" stroke-width="2">
+                      <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+                    </svg>
+                    <span>Download favorited photos</span>
+                  </div>
+                  <span class="dropdown-badge font-mono">({{ totalFavorites }})</span>
+                </button>
+
+                <!-- ADVANCED PHOTOGRAPHER TOOL: Export favorited photos (CSV) -->
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-section-title">Photographer Tools</div>
+
+                <button
+                  type="button"
+                  class="dropdown-item dropdown-item--photographer"
+                  :title="totalFavorites > 0 ? `Export CSV of ${totalFavorites} favorited photos` : 'Export favorited photos list to CSV'"
+                  @click="exportFavoritesToCSV(); showMoreMenu = false"
+                >
+                  <div class="dropdown-item-left">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#eab308" stroke-width="2">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                      <polyline points="14 2 14 8 20 8"/>
+                      <line x1="8" y1="13" x2="16" y2="13"/>
+                      <line x1="8" y1="17" x2="16" y2="17"/>
+                      <polyline points="10 9 9 9 8 9"/>
+                    </svg>
+                    <span>Export favorited photos (CSV)</span>
+                  </div>
+                  <span v-if="totalFavorites > 0" class="dropdown-badge font-mono">({{ totalFavorites }})</span>
+                </button>
+
+                <!-- View Options -->
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-section-title">View Options</div>
+
+                <div class="dropdown-config-row">
+                  <span class="dropdown-config-label">Density:</span>
+                  <div class="dropdown-toggle-group">
+                    <button
+                      type="button"
+                      class="dropdown-toggle-btn"
+                      :class="{ active: viewMode === 'standard' }"
+                      @click="viewMode = 'standard'"
+                    >
+                      Standard
+                    </button>
+                    <button
+                      type="button"
+                      class="dropdown-toggle-btn"
+                      :class="{ active: viewMode === 'large' }"
+                      @click="viewMode = 'large'"
+                    >
+                      Large
+                    </button>
+                    <button
+                      type="button"
+                      class="dropdown-toggle-btn"
+                      :class="{ active: viewMode === 'compact' }"
+                      @click="viewMode = 'compact'"
+                    >
+                      Compact
+                    </button>
+                  </div>
+                </div>
+
+                <div class="dropdown-config-row">
+                  <span class="dropdown-config-label">Aspect Ratio:</span>
+                  <div class="dropdown-toggle-group">
+                    <button
+                      type="button"
+                      class="dropdown-toggle-btn"
+                      :class="{ active: aspectMode === 'natural' }"
+                      @click="aspectMode = 'natural'"
+                    >
+                      Original
+                    </button>
+                    <button
+                      type="button"
+                      class="dropdown-toggle-btn"
+                      :class="{ active: aspectMode === 'square' }"
+                      @click="aspectMode = 'square'"
+                    >
+                      Square 1:1
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Switch to file list view -->
+                <div class="dropdown-divider"></div>
+                <button
+                  type="button"
+                  class="dropdown-item"
+                  @click="emit('switchToFileView'); showMoreMenu = false"
+                >
+                  <div class="dropdown-item-left">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="8" y1="6" x2="21" y2="6"/>
+                      <line x1="8" y1="12" x2="21" y2="12"/>
+                      <line x1="8" y1="18" x2="21" y2="18"/>
+                      <line x1="3" y1="6" x2="3.01" y2="6"/>
+                      <line x1="3" y1="12" x2="3.01" y2="12"/>
+                      <line x1="3" y1="18" x2="3.01" y2="18"/>
+                    </svg>
+                    <span>Switch to file list view</span>
+                  </div>
+                </button>
+
+                <!-- Day / Night Theme Toggle -->
+                <div class="dropdown-divider"></div>
+                <div class="dropdown-theme-toggle" @click="toggleDarkMode">
+                  <div class="dropdown-theme-left">
+                    <svg v-if="isDark" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg v-else viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="5"></circle>
+                      <line x1="12" y1="1" x2="12" y2="3"></line>
+                      <line x1="12" y1="21" x2="12" y2="23"></line>
+                      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                      <line x1="1" y1="12" x2="3" y2="12"></line>
+                      <line x1="21" y1="12" x2="23" y2="12"></line>
+                      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                    <span>Theme: {{ isDark ? 'Dark (Night)' : 'Light (Day)' }}</span>
+                  </div>
+                  <div class="dropdown-theme-switch" :class="{ on: isDark }">
+                    <span class="dropdown-theme-knob"></span>
+                  </div>
+                </div>
+              </div>
+            </transition>
           </div>
-
-          <div class="view-aspect-group">
-            <button
-              type="button"
-              class="density-btn"
-              :class="{ active: aspectMode === 'natural' }"
-              title="Natural Aspect"
-              @click="aspectMode = 'natural'"
-            >
-              Natural
-            </button>
-            <button
-              type="button"
-              class="density-btn"
-              :class="{ active: aspectMode === 'square' }"
-              title="Square Aspect"
-              @click="aspectMode = 'square'"
-            >
-              Square
-            </button>
-          </div>
-
-          <button
-            type="button"
-            class="nav-action-btn nav-action-btn--ai"
-            title="Face Search"
-            @click="showAiModal = true"
-          >
-            <span>Face Search</span>
-          </button>
-
-          <!-- QR Code Share -->
-          <button
-            type="button"
-            class="nav-action-btn"
-            title="QR Code"
-            @click="showQrModal = true"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="7"></rect>
-              <rect x="14" y="3" width="7" height="7"></rect>
-              <rect x="14" y="14" width="7" height="7"></rect>
-              <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-            <span>QR Code</span>
-          </button>
-
-          <!-- iOS Save to Photos Button -->
-          <button
-            v-if="isIOS"
-            type="button"
-            class="nav-action-btn nav-action-btn--ios"
-            title="Save to Photos (iOS)"
-            @click="showIosSaveModal = true"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-            <span>Save to Photos</span>
-          </button>
-
-          <!-- Multi-Select Mode Toggle -->
-          <button
-            type="button"
-            class="nav-action-btn"
-            :class="{ 'nav-action-btn--active': isSelectMode }"
-            title="Select Photos"
-            @click="toggleSelectMode"
-          >
-            <span>{{ isSelectMode ? 'Cancel' : 'Select' }}</span>
-          </button>
-
-          <a
-            v-if="zipUrl"
-            :href="zipUrl"
-            class="nav-action-btn"
-            title="Download entire album as ZIP"
-            download
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-            Download ZIP
-          </a>
-
-          <button
-            type="button"
-            class="nav-action-btn nav-action-btn--secondary"
-            title="Switch to file list view"
-            @click="emit('switchToFileView')"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="8" y1="6" x2="21" y2="6"/>
-              <line x1="8" y1="12" x2="21" y2="12"/>
-              <line x1="8" y1="18" x2="21" y2="18"/>
-              <line x1="3" y1="6" x2="3.01" y2="6"/>
-              <line x1="3" y1="12" x2="3.01" y2="12"/>
-              <line x1="3" y1="18" x2="3.01" y2="18"/>
-            </svg>
-            Switch to files
-          </button>
         </div>
       </div>
     </nav>
@@ -954,9 +1454,9 @@ watch(() => props.album, () => {
         <div class="indexing-banner-text">
           <span class="indexing-banner-heading">AI Face Indexing in progress</span>
           <span class="indexing-banner-sub">
-            {{ aifsStatus.indexed_photos ?? 0 }} / {{ aifsStatus.total_photos ?? 0 }} photos indexed
-            <template v-if="aifsStatus.detected_faces"> · {{ aifsStatus.detected_faces }} faces detected</template>
-            <template v-if="aifsStatus.clusters_count"> · {{ aifsStatus.clusters_count }} unique people</template>
+            Processed {{ aifsStatus.indexed_photos ?? 0 }} / {{ aifsStatus.total_photos ?? 0 }} photos
+            <template v-if="aifsStatus.detected_faces"> · {{ aifsStatus.detected_faces }} faces</template>
+            <template v-if="aifsStatus.clusters_count"> · {{ aifsStatus.clusters_count }} people</template>
           </span>
         </div>
         <span class="indexing-banner-percent">{{ Math.round(aifsStatus.percent_complete ?? 0) }}%</span>
@@ -966,26 +1466,120 @@ watch(() => props.album, () => {
       </div>
     </div>
 
-    <!-- Clustered Faces Carousel -->
-    <section v-if="token && (clusteredFaces.length > 0 || loadingFaces)" class="gallery-people-container">
-      <PeopleSelector
-        :faces="clusteredFaces"
-        :selected-face-id="selectedFaceId"
-        :token="token"
-        :loading="loadingFaces"
-        @select="handleSelectFace"
-      />
+    <!-- ========================================================================= -->
+    <!-- 3.1 AI FACE HERO BANNER - AIFS LUXURY -->
+    <!-- ========================================================================= -->
+    <section class="gallery-face-hero-container">
+      <div class="aifs-face-hero-card">
+        <div class="aifs-face-hero-top">
+          <div class="aifs-face-hero-info">
+            <div class="aifs-face-hero-icon-ring">
+              <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.2">
+                <path d="M7 3H5a2 2 0 0 0-2 2v2M17 3h2a2 2 0 0 1 2 2v2M7 21H5a2 2 0 0 1-2-2v-2M17 21h2a2 2 0 0 0 2-2v-2"/>
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M12 16a4 4 0 0 1-4-4"/>
+              </svg>
+            </div>
+            <div>
+              <div class="aifs-face-hero-title-row">
+                <h3 class="aifs-face-hero-title">Find photos by face</h3>
+                <span class="aifs-face-hero-badge">AI Face</span>
+              </div>
+              <p class="aifs-face-hero-desc">
+                Take or upload a selfie for AI to automatically find all your photos in this album
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="btn-aifs-selfie-cta"
+            @click="showAiModal = true"
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            <span>Take or upload selfie</span>
+          </button>
+        </div>
+
+        <!-- Clustered Faces Carousel if available -->
+        <div v-if="clusteredFaces.length > 0 || loadingFaces" class="aifs-face-hero-people">
+          <div class="aifs-face-hero-people-header">
+            <span class="aifs-face-hero-people-label">
+              Or click on a person in this album ({{ clusteredFaces.length }} people):
+            </span>
+            <button
+              v-if="selectedFaceId !== null"
+              type="button"
+              class="btn-aifs-clear-link"
+              @click="clearFaceFilter"
+            >
+              View all photos
+            </button>
+          </div>
+          <PeopleSelector
+            :faces="clusteredFaces"
+            :selected-face-id="selectedFaceId"
+            :loading="loadingFaces"
+            :hide-header="true"
+            @select="handleSelectFace"
+          />
+        </div>
+      </div>
     </section>
 
-    <!-- Active Face Filter Banner -->
-    <div v-if="selectedFaceId !== null" class="gallery-active-filter-banner">
-      <div class="active-filter-left">
-        <span class="active-filter-indicator"></span>
-        <span class="active-filter-text">Filtered by person · {{ displayItems.length }} photos</span>
+    <!-- ========================================================================= -->
+    <!-- 3.2 ACTIVE FACE FILTER BANNER (Face filter active) -->
+    <!-- ========================================================================= -->
+    <div v-if="selectedFaceId !== null" class="aifs-active-face-banner">
+      <div class="active-face-left">
+        <img
+          v-if="activeFaceCropUrl"
+          :src="activeFaceCropUrl"
+          alt="Face"
+          class="active-face-thumb"
+        />
+        <div v-else class="active-face-thumb-placeholder">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="7" r="4"/>
+            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+          </svg>
+        </div>
+        <div>
+          <div class="active-face-title-row">
+            <span class="active-face-title">Face Filter Results</span>
+            <span class="active-face-badge">{{ displayItems.length }} {{ displayItems.length === 1 ? 'photo' : 'photos' }}</span>
+          </div>
+          <p class="active-face-sub">Showing all photos featuring this person in the album</p>
+        </div>
       </div>
-      <button type="button" class="btn-clear-face-filter" @click="clearFaceFilter">
-        Clear filter
-      </button>
+
+      <div class="active-face-right">
+        <button
+          v-if="displayItems.length > 0"
+          type="button"
+          class="btn-aifs-download-active"
+          @click="selectedItemIds = new Set(displayItems.map(i => i.id)); handleBatchAction()"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+          </svg>
+          <span>Download all ({{ displayItems.length }})</span>
+        </button>
+        <button
+          type="button"
+          class="btn-aifs-clear-active"
+          @click="clearFaceFilter"
+        >
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+          <span>View all photos</span>
+        </button>
+      </div>
     </div>
 
     <!-- ========================================================================= -->
@@ -996,75 +1590,117 @@ watch(() => props.album, () => {
         <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="#cbd5e1" stroke-width="1.5">
           <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
         </svg>
-        <p v-if="filterMode === 'AI_MATCHES'">No matching photos found in this album.</p>
-        <p v-else>No favorite photos yet in this collection.</p>
+        <p v-if="filterMode === 'AI_MATCHES'">No photos match this face filter.</p>
+        <p v-else-if="filterMode === 'FAVORITES'">No photos have been added to favorites yet.</p>
+        <p v-else>No photos found in this collection.</p>
         <button type="button" class="btn-reset-filter" @click="filterMode = 'ALL'">
           View all photos
         </button>
       </div>
 
-      <div v-else :class="['masonry-columns', `view-${viewMode}`, `aspect-${aspectMode}`]">
+      <!-- Favorites action banner when viewing favorites -->
+      <div v-else-if="filterMode === 'FAVORITES'" class="gallery-favorites-header">
+        <div class="favorites-header-info">
+          <span class="favorites-header-icon">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="#FFC629" stroke="#FFC629">
+              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+            </svg>
+          </span>
+          <span class="favorites-header-text">Favorited Photos · {{ displayItems.length }} {{ displayItems.length === 1 ? 'photo' : 'photos' }}</span>
+        </div>
+        <button type="button" class="btn-fav-export-csv" @click="exportFavoritesToCSV">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="8" y1="13" x2="16" y2="13"/>
+            <line x1="8" y1="17" x2="16" y2="17"/>
+          </svg>
+          <span>Export CSV</span>
+        </button>
+      </div>
+
+      <div v-if="displayItems.length > 0" :class="['masonry-columns', `view-${viewMode}`, `aspect-${aspectMode}`]">
         <div
           v-for="(item, index) in displayItems"
           :key="item.id || index"
           class="photo-card"
-          :class="{ 'is-selected': selectedItemIds.has(item.id), 'card-square': aspectMode === 'square' }"
+          :class="{ 'is-selected': selectedItemIds.has(item.id), 'card-square': aspectMode === 'square', 'in-select-mode': isSelectMode }"
           @click="isSelectMode ? toggleSelectItem(item.id, $event) : openLightbox(index)"
         >
-          <!-- Selection indicator in select mode -->
-          <div
-            v-if="isSelectMode"
-            class="photo-select-checkbox"
-            :class="{ 'is-checked': selectedItemIds.has(item.id) }"
-            @click.stop="toggleSelectItem(item.id, $event)"
-          >
-            <svg v-if="selectedItemIds.has(item.id)" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#ffffff" stroke-width="3">
-              <polyline points="20 6 9 17 4 12"/>
-            </svg>
-          </div>
-
-          <!-- AI similarity match badge -->
-          <div v-if="aiMatchesMap[item.filename]" class="ai-match-badge" title="Match confidence">
-            <span>{{ Math.round((aiMatchesMap[item.filename].similarity || 0.85) * 100) }}% Match</span>
-          </div>
-
-          <!-- Natural aspect ratio image -->
-          <img
-            :src="item.thumbnailUrl || item.previewUrl || item.originalUrl"
-            :alt="item.filename"
-            loading="lazy"
-          />
-
-          <!-- Quick Download / Save to Photos button -->
-          <button
-            type="button"
-            class="btn-download-quick photo-action-shadow"
-            :title="isIOS ? 'Save to Photos' : 'Download'"
-            @click.stop="downloadPhoto(item, $event)"
-          >
-            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="#ffffff" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
-            </svg>
-          </button>
-
-          <!-- Heart favorite button -->
-          <button
-            type="button"
-            class="btn-heart photo-heart-shadow heart-interactive"
-            :title="favoritesMap[item.id] ? 'Favorited' : 'Favorite'"
-            @click.stop="toggleFavorite(item.id, $event)"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              width="26"
-              height="26"
-              :fill="favoritesMap[item.id] ? '#ef4444' : 'rgba(0,0,0,0.3)'"
-              :stroke="favoritesMap[item.id] ? '#ef4444' : '#ffffff'"
-              stroke-width="2"
+          <!-- Frame Border Container -->
+          <div class="photo-card-frame">
+            <!-- Selection indicator in select mode -->
+            <div
+              v-if="isSelectMode"
+              class="photo-select-checkbox"
+              :class="{ 'is-checked': selectedItemIds.has(item.id) }"
+              @click.stop="toggleSelectItem(item.id, $event)"
             >
-              <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-            </svg>
-          </button>
+              <svg v-if="selectedItemIds.has(item.id)" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#ffffff" stroke-width="3">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+              <span v-else class="photo-select-checkbox-dot"></span>
+            </div>
+
+            <!-- AI similarity match badge -->
+            <div v-if="aiMatchesMap[item.filename]" class="ai-match-badge" title="Face similarity match">
+              <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+              <span>{{ Math.round((aiMatchesMap[item.filename].similarity || 0.85) * 100) }}% Match</span>
+            </div>
+
+            <!-- Natural aspect ratio image -->
+            <img
+              :src="safePhotoUrl(item.thumbnailUrl || item.previewUrl || item.originalUrl, item.filename)"
+              :alt="item.filename"
+              loading="lazy"
+              class="photo-card-img"
+            />
+
+            <!-- Subtle Vignette Scrim for Action Clarity -->
+            <div class="photo-card-scrim"></div>
+
+            <!-- Bottom info badge (filename & MP) -->
+            <div class="photo-card-info-badge">
+              <span class="photo-card-info-name">{{ item.filename }}</span>
+              <span v-if="getMegapixels(item.width, item.height)" class="photo-card-info-mp">
+                {{ getMegapixels(item.width, item.height) }}
+              </span>
+            </div>
+
+            <!-- Quick Download / Save to Photos button -->
+            <button
+              type="button"
+              class="btn-download-quick photo-action-shadow"
+              :title="isIOS ? 'Save to iOS Photos' : 'Download photo'"
+              @click.stop="downloadPhoto(item, $event)"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="#ffffff" stroke-width="2.5">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+            </button>
+
+            <!-- Heart favorite button -->
+            <button
+              type="button"
+              class="btn-heart photo-heart-shadow heart-interactive"
+              :class="{ 'is-favorited': favoritesMap[item.id] }"
+              :title="favoritesMap[item.id] ? 'Favorited' : 'Add to favorites'"
+              @click.stop="toggleFavorite(item.id, $event)"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="22"
+                height="22"
+                :fill="favoritesMap[item.id] ? '#ffffff' : 'rgba(0,0,0,0.3)'"
+                :stroke="favoritesMap[item.id] ? '#ffffff' : '#ffffff'"
+                stroke-width="2"
+              >
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
+            </button>
+          </div>
         </div>
       </div>
     </main>
@@ -1084,6 +1720,7 @@ watch(() => props.album, () => {
         <div
           v-if="activeLightboxIndex !== null && currentLightboxItem"
           class="lightbox-modal"
+          :class="{ 'ui-hidden': isUiHidden }"
           @touchstart="onTouchStart"
           @touchend="onTouchEnd"
         >
@@ -1104,8 +1741,8 @@ watch(() => props.album, () => {
                   viewBox="0 0 24 24"
                   width="20"
                   height="20"
-                  :fill="favoritesMap[currentLightboxItem.id] ? '#ef4444' : 'none'"
-                  :stroke="favoritesMap[currentLightboxItem.id] ? '#ef4444' : 'currentColor'"
+                  :fill="favoritesMap[currentLightboxItem.id] ? '#ffffff' : 'none'"
+                  :stroke="favoritesMap[currentLightboxItem.id] ? '#ffffff' : 'currentColor'"
                   stroke-width="2"
                 >
                   <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
@@ -1127,6 +1764,20 @@ watch(() => props.album, () => {
                 <span style="font-size: 13px;">Copy Link</span>
               </button>
 
+              <!-- Toggle Full Photo (Hide UI) -->
+              <button
+                type="button"
+                class="lightbox-btn"
+                :class="{ 'is-active': isUiHidden }"
+                :title="isUiHidden ? 'Show Controls' : 'View Full Photo (Hide UI)'"
+                @click="toggleUi"
+              >
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/>
+                </svg>
+                <span style="font-size: 13px;">Full</span>
+              </button>
+
               <!-- Info toggle -->
               <button
                 type="button"
@@ -1141,6 +1792,22 @@ watch(() => props.album, () => {
                   <line x1="12" y1="8" x2="12.01" y2="8"/>
                 </svg>
                 <span style="font-size: 13px;">Info</span>
+              </button>
+
+              <!-- Toggle Face Frames Button -->
+              <button
+                v-if="currentItemFaceBoxes.length > 0"
+                type="button"
+                class="lightbox-btn"
+                :class="{ 'is-active': showFaceFrames }"
+                title="Toggle Face Detection Frames"
+                @click="showFaceFrames = !showFaceFrames"
+              >
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M7 3H5a2 2 0 0 0-2 2v2M17 3h2a2 2 0 0 1 2 2v2M7 21H5a2 2 0 0 1-2-2v-2M17 21h2a2 2 0 0 0 2-2v-2"/>
+                  <circle cx="12" cy="12" r="3"/>
+                </svg>
+                <span style="font-size: 13px;">Face Frames ({{ currentItemFaceBoxes.length }})</span>
               </button>
 
               <button
@@ -1173,11 +1840,35 @@ watch(() => props.album, () => {
               </svg>
             </button>
 
-            <img
-              :src="currentLightboxItem.originalUrl || currentLightboxItem.previewUrl"
-              :alt="currentLightboxItem.filename"
-              @load="onLightboxImageLoad($event, currentLightboxItem)"
-            />
+            <div class="lightbox-stage">
+              <img
+                :src="safePhotoUrl(currentLightboxItem.originalUrl || currentLightboxItem.previewUrl, currentLightboxItem.filename)"
+                :alt="currentLightboxItem.filename"
+                class="lightbox-main-img"
+                :class="{ 'is-fullscreen-img': isUiHidden }"
+                title="Click image to toggle full photo view"
+                @load="onLightboxImageLoad($event, currentLightboxItem)"
+                @click="toggleUi"
+              />
+
+              <!-- Face Bounding Box Frames -->
+              <div v-if="showFaceFrames && currentItemFaceBoxes.length > 0" class="lightbox-face-overlay">
+                <div
+                  v-for="box in currentItemFaceBoxes"
+                  :key="box.id"
+                  class="lightbox-face-frame"
+                  :style="box.style"
+                  :title="`Person #${box.id} · Click to filter photos`"
+                  @click.stop="handleSelectFaceFromLightbox(box.id)"
+                >
+                  <span class="face-frame-corner tl"></span>
+                  <span class="face-frame-corner tr"></span>
+                  <span class="face-frame-corner bl"></span>
+                  <span class="face-frame-corner br"></span>
+                  <span class="face-frame-chip">Person #{{ box.id }}</span>
+                </div>
+              </div>
+            </div>
 
             <button type="button" class="lightbox-nav-btn right" title="Next photo (Right arrow)" @click.stop="nextLightbox">
               <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2">
@@ -1199,14 +1890,14 @@ watch(() => props.album, () => {
                 <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
                 <circle cx="12" cy="13" r="4"/>
               </svg>
-              <span class="quick-exif-main">{{ currentLightboxItem.camera || 'Photo details' }}</span>
-              <template v-if="currentLightboxItem.taken_at">
+              <span class="quick-exif-main">{{ currentExif?.camera || currentLightboxItem.camera || 'Photo details' }}</span>
+              <template v-if="currentExif?.taken_at || currentLightboxItem.taken_at">
                 <span class="quick-exif-sep">•</span>
-                <span>{{ new Date(currentLightboxItem.taken_at).toLocaleDateString() }}</span>
+                <span>{{ new Date(currentExif?.taken_at || currentLightboxItem.taken_at!).toLocaleDateString() }}</span>
               </template>
-              <template v-if="getMegapixels(currentLightboxItem.width, currentLightboxItem.height)">
+              <template v-if="getMegapixels(currentExif?.width || currentLightboxItem.width, currentExif?.height || currentLightboxItem.height)">
                 <span class="quick-exif-sep">•</span>
-                <span class="quick-exif-mp">{{ getMegapixels(currentLightboxItem.width, currentLightboxItem.height) }}</span>
+                <span class="quick-exif-mp">{{ getMegapixels(currentExif?.width || currentLightboxItem.width, currentExif?.height || currentLightboxItem.height) }}</span>
               </template>
               <span class="quick-exif-action">Details →</span>
             </button>
@@ -1351,41 +2042,41 @@ watch(() => props.album, () => {
                 </div>
 
                 <!-- Camera Info -->
-                <div v-if="currentLightboxItem.camera || currentLightboxItem.lens || currentLightboxItem.taken_at" class="exif-section">
+                <div v-if="(currentExif?.camera || currentLightboxItem.camera) || (currentExif?.lens || currentLightboxItem.lens) || (currentExif?.taken_at || currentLightboxItem.taken_at)" class="exif-section">
                   <div class="exif-section-title">Camera & Gear</div>
-                  <div v-if="currentLightboxItem.camera" class="exif-row">
+                  <div v-if="currentExif?.camera || currentLightboxItem.camera" class="exif-row">
                     <span class="exif-label">Camera</span>
-                    <span class="exif-value">{{ currentLightboxItem.camera }}</span>
+                    <span class="exif-value">{{ currentExif?.camera || currentLightboxItem.camera }}</span>
                   </div>
-                  <div v-if="currentLightboxItem.lens" class="exif-row">
+                  <div v-if="currentExif?.lens || currentLightboxItem.lens" class="exif-row">
                     <span class="exif-label">Lens</span>
-                    <span class="exif-value">{{ currentLightboxItem.lens }}</span>
+                    <span class="exif-value">{{ currentExif?.lens || currentLightboxItem.lens }}</span>
                   </div>
-                  <div v-if="currentLightboxItem.taken_at" class="exif-row">
+                  <div v-if="currentExif?.taken_at || currentLightboxItem.taken_at" class="exif-row">
                     <span class="exif-label">Date Taken</span>
-                    <span class="exif-value">{{ new Date(currentLightboxItem.taken_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) }}</span>
+                    <span class="exif-value">{{ new Date(currentExif?.taken_at || currentLightboxItem.taken_at!).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) }}</span>
                   </div>
                 </div>
 
                 <!-- Exposure Parameters -->
-                <div v-if="currentLightboxItem.aperture || currentLightboxItem.shutter_speed || currentLightboxItem.iso || currentLightboxItem.focal_length" class="exif-section">
+                <div v-if="(currentExif?.aperture || currentLightboxItem.aperture) || (currentExif?.shutter_speed || currentLightboxItem.shutter_speed) || (currentExif?.iso || currentLightboxItem.iso) || (currentExif?.focal_length || currentLightboxItem.focal_length)" class="exif-section">
                   <div class="exif-section-title">Exposure</div>
                   <div class="exif-params-grid">
-                    <div v-if="currentLightboxItem.aperture" class="exif-param-box">
+                    <div v-if="currentExif?.aperture || currentLightboxItem.aperture" class="exif-param-box">
                       <span class="exif-param-name">Aperture</span>
-                      <span class="exif-param-val">{{ currentLightboxItem.aperture }}</span>
+                      <span class="exif-param-val">{{ currentExif?.aperture || currentLightboxItem.aperture }}</span>
                     </div>
-                    <div v-if="currentLightboxItem.shutter_speed" class="exif-param-box">
+                    <div v-if="currentExif?.shutter_speed || currentLightboxItem.shutter_speed" class="exif-param-box">
                       <span class="exif-param-name">Shutter</span>
-                      <span class="exif-param-val">{{ currentLightboxItem.shutter_speed }}</span>
+                      <span class="exif-param-val">{{ currentExif?.shutter_speed || currentLightboxItem.shutter_speed }}</span>
                     </div>
-                    <div v-if="currentLightboxItem.iso" class="exif-param-box">
+                    <div v-if="currentExif?.iso || currentLightboxItem.iso" class="exif-param-box">
                       <span class="exif-param-name">ISO</span>
-                      <span class="exif-param-val">{{ currentLightboxItem.iso }}</span>
+                      <span class="exif-param-val">{{ currentExif?.iso || currentLightboxItem.iso }}</span>
                     </div>
-                    <div v-if="currentLightboxItem.focal_length" class="exif-param-box">
+                    <div v-if="currentExif?.focal_length || currentLightboxItem.focal_length" class="exif-param-box">
                       <span class="exif-param-name">Focal Length</span>
-                      <span class="exif-param-val">{{ currentLightboxItem.focal_length }}</span>
+                      <span class="exif-param-val">{{ currentExif?.focal_length || currentLightboxItem.focal_length }}</span>
                     </div>
                   </div>
                 </div>
@@ -1397,9 +2088,9 @@ watch(() => props.album, () => {
                     <span class="exif-label">Filename</span>
                     <span class="exif-value filename-wrap">{{ currentLightboxItem.filename }}</span>
                   </div>
-                  <div v-if="currentLightboxItem.width && currentLightboxItem.height" class="exif-row">
+                  <div v-if="(currentExif?.width || currentLightboxItem.width) && (currentExif?.height || currentLightboxItem.height)" class="exif-row">
                     <span class="exif-label">Dimensions</span>
-                    <span class="exif-value">{{ currentLightboxItem.width }} × {{ currentLightboxItem.height }} px {{ getMegapixels(currentLightboxItem.width, currentLightboxItem.height) ? `(${getMegapixels(currentLightboxItem.width, currentLightboxItem.height)})` : '' }}</span>
+                    <span class="exif-value">{{ currentExif?.width || currentLightboxItem.width }} × {{ currentExif?.height || currentLightboxItem.height }} px {{ getMegapixels(currentExif?.width || currentLightboxItem.width, currentExif?.height || currentLightboxItem.height) ? `(${getMegapixels(currentExif?.width || currentLightboxItem.width, currentExif?.height || currentLightboxItem.height)})` : '' }}</span>
                   </div>
                   <div v-if="currentLightboxItem.size" class="exif-row">
                     <span class="exif-label">Size</span>
@@ -1413,88 +2104,145 @@ watch(() => props.album, () => {
       </transition>
     </teleport>
 
-    <!-- 5. AI FACE SEARCH MODAL -->
+    <!-- 5. AI FACE SEARCH MODAL (AIFS LUXURY GOLD) -->
     <teleport to="body">
       <transition name="fe-album-fade">
-        <div v-if="showAiModal" class="ai-modal-overlay" @click.self="showAiModal = false">
-          <div class="ai-modal-card">
+        <div
+          v-if="showAiModal"
+          class="aifs-selfie-modal-backdrop"
+          @click="showAiModal = false"
+        >
+          <div
+            class="aifs-selfie-modal-card"
+            @click.stop
+          >
+            <!-- Close Button -->
+            <button
+              type="button"
+              class="aifs-selfie-modal-close"
+              @click="showAiModal = false"
+              title="Close"
+            >
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+
+            <!-- Hidden file inputs -->
+            <input
+              ref="cameraInputRef"
+              type="file"
+              accept="image/*"
+              capture="user"
+              style="display: none;"
+              @change="onSelfieFileChosen"
+            />
+            <input
+              ref="selfieInputRef"
+              type="file"
+              accept="image/*"
+              style="display: none;"
+              @change="onSelfieFileChosen"
+            />
+
             <!-- Modal Header -->
-            <div class="ai-modal-header">
-              <div class="ai-modal-title">
-                <span>Face Search</span>
-              </div>
-              <button type="button" class="ai-modal-close" @click="showAiModal = false" title="Close">
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18"/>
-                  <line x1="6" y1="6" x2="18" y2="18"/>
+            <div class="aifs-selfie-modal-header">
+              <div class="aifs-selfie-modal-icon-ring">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.2">
+                  <path d="M7 3H5a2 2 0 0 0-2 2v2M17 3h2a2 2 0 0 1 2 2v2M7 21H5a2 2 0 0 1-2-2v-2M17 21h2a2 2 0 0 0 2-2v-2"/>
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M12 16a4 4 0 0 1-4-4"/>
                 </svg>
+              </div>
+              <div>
+                <h3 class="aifs-selfie-modal-title">Find photos by face</h3>
+                <p class="aifs-selfie-modal-subtitle">Upload a selfie to find all photos of you in this album</p>
+              </div>
+            </div>
+
+            <!-- Options: Not selected yet -->
+            <div v-if="!aiSelfiePreview" class="aifs-selfie-options">
+              <!-- Option 1: Take selfie now -->
+              <button
+                type="button"
+                class="btn-selfie-camera"
+                @click="triggerCamera"
+              >
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+                <span>Take a selfie now</span>
+              </button>
+
+              <!-- Option 2: Choose photo from library -->
+              <button
+                type="button"
+                class="btn-selfie-gallery"
+                @click="triggerGalleryUpload"
+              >
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/>
+                  <path d="M12 12v9"/>
+                  <path d="m16 16-4-4-4 4"/>
+                </svg>
+                <span>Choose photo from library</span>
+              </button>
+
+              <!-- Privacy note -->
+              <div class="aifs-selfie-privacy-note">
+                <strong>Privacy Protection:</strong> Your selfie is only used for temporary on-device face matching in memory and is never permanently stored on the server.
+              </div>
+            </div>
+
+            <!-- Option 2: Selfie preview selected -->
+            <div v-else class="aifs-selfie-preview-section">
+              <div class="aifs-selfie-preview-card">
+                <img :src="aiSelfiePreview" alt="Selfie" class="aifs-selfie-preview-img" />
+                <div class="aifs-selfie-preview-info">
+                  <h4 class="aifs-selfie-preview-heading">Selected selfie</h4>
+                  <p class="aifs-selfie-preview-desc">Your face will be matched against all photos in this album.</p>
+                  <button
+                    type="button"
+                    :disabled="aiSearching"
+                    class="btn-selfie-change"
+                    @click="clearSelfie"
+                  >
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+                    </svg>
+                    <span>Choose another photo</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Searching Progress -->
+              <div v-if="aiSearching" class="aifs-selfie-searching-box">
+                <div class="aifs-selfie-spinner"></div>
+                <p class="aifs-selfie-searching-step">{{ aiSearchStep || 'AI is scanning and matching faces...' }}</p>
+                <p class="aifs-selfie-searching-hint">Please wait a few seconds...</p>
+              </div>
+
+              <!-- Search Submit Button -->
+              <button
+                v-else
+                type="button"
+                class="btn-selfie-submit"
+                @click="runSelfieSearch"
+              >
+                Start Search
               </button>
             </div>
 
-            <!-- Modal Body -->
-            <div class="ai-modal-body">
-              <!-- Indexing status banner -->
-              <div v-if="aifsStatus" class="ai-status-banner" style="margin-bottom: 16px; padding: 10px 14px; border-radius: 8px; font-size: 12.5px; display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                  <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%;" :style="{ background: aifsStatus.status === 'ready' ? '#10b981' : '#f59e0b' }"></span>
-                  <span style="color: #475569; font-weight: 500;">
-                    AI Status: {{ aifsStatus.status === 'ready' ? 'Ready' : 'Indexing' }}
-                  </span>
-                </div>
-                <span style="color: #64748b; font-size: 12px;">
-                  {{ aifsStatus.indexed_photos }} / {{ aifsStatus.total_photos }} photos ({{ aifsStatus.detected_faces ?? aifsStatus.total_faces ?? 0 }} faces)
-                </span>
-              </div>
-
-              <!-- Upload Selfie Area -->
-              <div
-                v-if="!aiSelfiePreview"
-                class="ai-dropzone"
-                @click="triggerSelfieInput"
-                @dragover.prevent
-                @drop.prevent="onSelfieDrop"
-              >
-                <input
-                  ref="selfieInputRef"
-                  type="file"
-                  accept="image/*"
-                  style="display: none;"
-                  @change="onSelfieChange"
-                />
-                <div style="font-size: 14.5px; font-weight: 600; color: #1e293b;">Upload Selfie</div>
-              </div>
-
-              <!-- Selfie Preview -->
-              <div v-else style="text-align: center;">
-                <div class="ai-preview-box">
-                  <img :src="aiSelfiePreview" alt="Selfie" class="ai-preview-img" />
-                </div>
-                <button
-                  type="button"
-                  style="background: none; border: none; color: #64748b; font-size: 12.5px; cursor: pointer; text-decoration: underline; margin-bottom: 16px;"
-                  @click="clearSelfie"
-                >
-                  Change photo
-                </button>
-              </div>
-
-              <!-- Error display -->
-              <div v-if="aiSearchError" style="margin-top: 14px; padding: 10px 14px; border-radius: 8px; background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; font-size: 13px;">
-                {{ aiSearchError }}
-              </div>
-
-              <!-- Action button -->
-              <div style="margin-top: 20px;">
-                <button
-                  type="button"
-                  class="ai-btn-primary"
-                  :disabled="!aiSelfieFile || aiSearching"
-                  @click="runSelfieSearch"
-                >
-                  <span v-if="aiSearching" class="ai-spinner"></span>
-                  <span>{{ aiSearching ? 'Searching...' : 'Search' }}</span>
-                </button>
-              </div>
+            <!-- Error alert -->
+            <div v-if="aiSearchError" class="aifs-selfie-error-banner">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
+              </svg>
+              <span>{{ aiSearchError }}</span>
             </div>
           </div>
         </div>
@@ -1505,10 +2253,39 @@ watch(() => props.album, () => {
     <teleport to="body">
       <transition name="fe-album-fade">
         <div v-if="isSelectMode && displayItems.length > 0" class="gallery-selection-bar">
-          <span class="selection-count">{{ selectedItemIds.size }} selected</span>
+          <div class="selection-bar-left">
+            <span class="selection-count">{{ selectedItemIds.size }} / {{ displayItems.length }} selected</span>
+          </div>
           <div class="selection-actions">
             <button type="button" class="btn-selection-action" @click="selectAllItems">
               {{ selectedItemIds.size === displayItems.length ? 'Deselect All' : 'Select All' }}
+            </button>
+            <button
+              type="button"
+              class="btn-selection-action btn-selection-action--fav"
+              :disabled="selectedItemIds.size === 0"
+              title="Add selected photos to favorites"
+              @click="favoriteSelectedItems"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="#ffffff" stroke="#ffffff" stroke-width="2">
+                <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
+              </svg>
+              <span>Favorite</span>
+            </button>
+            <button
+              type="button"
+              class="btn-selection-action btn-selection-action--csv"
+              :disabled="selectedItemIds.size === 0"
+              title="Export selected photos to CSV"
+              @click="exportSelectedToCSV"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="8" y1="13" x2="16" y2="13"/>
+                <line x1="8" y1="17" x2="16" y2="17"/>
+              </svg>
+              <span>Export CSV</span>
             </button>
             <button
               type="button"
@@ -1516,7 +2293,21 @@ watch(() => props.album, () => {
               :disabled="selectedItemIds.size === 0"
               @click="handleBatchAction"
             >
-              {{ isIOS ? 'Save to Photos' : 'Download Selected' }}
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+              </svg>
+              <span>{{ isIOS ? 'Save Photos' : 'Download' }}</span>
+            </button>
+            <button
+              type="button"
+              class="btn-selection-action btn-selection-action--close"
+              title="Exit selection mode"
+              @click="toggleSelectMode"
+            >
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
             </button>
           </div>
         </div>
@@ -1557,7 +2348,7 @@ watch(() => props.album, () => {
 <style>
 /* =========================================================================
    PUBLIC SHARE GALLERY - VANILLA & REACT CSS (STANDALONE STYLESHEET)
-   Matching web/sharing_source: Phong cách Luxury Editorial Gallery
+   Matching web/sharing_source: Luxury Editorial Gallery
    ========================================================================= */
 
 @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,400&family=Inter:wght@300;400;500;600;700&family=Montserrat:wght@400;600;700;800&family=Playfair+Display:ital,wght@0,400;0,500;0,600;1,400&display=swap');
@@ -1570,12 +2361,21 @@ watch(() => props.album, () => {
   z-index: 1000;
   overflow-x: hidden;
   overflow-y: auto;
-  background-color: #fafafa;
-  color: #171717;
+  background-color: #FFFDF8 !important;
+  color: #171717 !important;
+  transition: background-color 0.25s ease, color 0.25s ease;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   scroll-behavior: smooth;
 }
+
+.fe-album-root.dark,
+html.dark .fe-album-root,
+body.dark .fe-album-root {
+  background-color: #0E0E0D !important;
+  color: #F5F5F4 !important;
+}
+
 
 /* 1. HERO COVER: STYLE HADUANH LUXURY */
 .hero-haduanh {
@@ -1955,54 +2755,110 @@ watch(() => props.album, () => {
   position: sticky;
   top: 0;
   z-index: 40;
-  background-color: rgba(250, 250, 250, 0.95);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid #e5e5e5;
+  background-color: rgba(255, 253, 248, 0.95);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(232, 229, 222, 0.85);
   transition: all 0.2s ease;
 }
 
+.fe-album-root.dark .gallery-nav,
+.fe-album-root.dark .gallery-nav,
+[data-theme='dark'] .gallery-nav {
+  background-color: rgba(14, 14, 13, 0.95);
+  border-bottom-color: rgba(41, 41, 39, 0.85);
+}
+
 .gallery-nav-inner {
-  width: 85%;
-  max-width: 1600px;
+  width: 92%;
+  max-width: 1700px;
   margin: 0 auto;
-  padding: 14px 0;
+  padding: 10px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
 }
 
+.gallery-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  flex: 1;
+}
+
+.gallery-nav-title-group {
+  flex-shrink: 0;
+  min-width: 0;
+}
+
 .gallery-nav-title {
-  font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: 1.25rem;
-  font-weight: 600;
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
   color: #171717;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.fe-album-root.dark .gallery-nav-title,
+.fe-album-root.dark .gallery-nav-title,
+[data-theme='dark'] .gallery-nav-title {
+  color: #F5F5F4;
 }
 
 .gallery-nav-meta {
-  font-size: 12px;
-  color: #737373;
-  margin-top: 2px;
+  font-size: 11.5px;
+  color: #71717a;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.gallery-nav-fav-count {
+  color: #FFC629;
+  font-weight: 600;
+}
+
+.gallery-nav-select-count {
+  color: #eab308;
+  font-weight: 600;
+}
+
+.gallery-nav-ai-count {
+  color: #ca8a04;
+  font-weight: 600;
 }
 
 .gallery-nav-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  flex-shrink: 0;
 }
 
-/* Filter Pill */
+/* Filter Pills */
 .filter-pills {
   display: flex;
-  background-color: #f1f5f9;
-  padding: 4px;
+  align-items: center;
+  background-color: #f4f1ea;
+  padding: 3px;
   border-radius: 9999px;
-  border: 1px solid #e5e5e5;
+  border: 1px solid #e8e5de;
   font-size: 12px;
+}
+
+.fe-album-root.dark .filter-pills,
+.fe-album-root.dark .filter-pills,
+[data-theme='dark'] .filter-pills {
+  background-color: #1c1c1b;
+  border-color: #2e2e2c;
 }
 
 .filter-btn {
@@ -2010,54 +2866,759 @@ watch(() => props.album, () => {
   border-radius: 9999px;
   border: none;
   background: transparent;
-  color: #737373;
+  color: #686868;
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.fe-album-root.dark .filter-btn,
+.fe-album-root.dark .filter-btn,
+[data-theme='dark'] .filter-btn {
+  color: #a3a3a0;
+}
+
+.filter-btn:hover {
+  color: #171717;
+}
+
+.fe-album-root.dark .filter-btn:hover,
+.fe-album-root.dark .filter-btn:hover {
+  color: #ffffff;
 }
 
 .filter-btn.active {
   background-color: #171717;
   color: #ffffff;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
 }
 
-.nav-action-btn {
+.fe-album-root.dark .filter-btn.active,
+.fe-album-root.dark .filter-btn.active {
+  background-color: #ffffff;
+  color: #171717;
+}
+
+.filter-btn--fav.active {
+  background: #171717 !important;
+  color: #ffffff !important;
+}
+
+.filter-fav-badge {
+  background: rgba(255, 198, 41, 0.2);
+  color: #FFC629;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 9999px;
+}
+
+.filter-btn--fav.active .filter-fav-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.filter-btn--ai.active {
+  background: #FFC629 !important;
+  color: #171717 !important;
+  box-shadow: 0 2px 8px rgba(255, 198, 41, 0.35) !important;
+}
+
+/* Nav Action Buttons: Select & "..." */
+.nav-btn-select {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: 1px solid #dcd7ce;
+  background: #ffffff;
+  color: #171717;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.fe-album-root.dark .nav-btn-select,
+.fe-album-root.dark .nav-btn-select {
+  background: #181817;
+  border-color: #292927;
+  color: #f5f5f4;
+}
+
+.nav-btn-select:hover {
+  background: #f7f4ed;
+  border-color: #c9c4b9;
+}
+
+.fe-album-root.dark .nav-btn-select:hover,
+.fe-album-root.dark .nav-btn-select:hover {
+  background: #222220;
+}
+
+.nav-selected-badge {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  background: #FFC629;
+  color: #171717;
+}
+
+.nav-btn-done {
+  padding: 7px 18px;
+  border-radius: 9999px;
+  border: none;
+  background: #171717;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.fe-album-root.dark .nav-btn-done,
+.fe-album-root.dark .nav-btn-done {
+  background: #ffffff;
+  color: #171717;
+}
+
+.nav-btn-done:hover {
+  opacity: 0.9;
+  transform: scale(0.98);
+}
+
+/* Navigation More Dropdown Menu ("...") */
+.nav-more-wrapper {
+  position: relative;
+}
+
+.nav-btn-more {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: 1px solid #dcd7ce;
+  background: #ffffff;
+  color: #52525b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.fe-album-root.dark .nav-btn-more,
+.fe-album-root.dark .nav-btn-more {
+  background: #181817;
+  border-color: #292927;
+  color: #a3a3a0;
+}
+
+.nav-btn-more:hover,
+.nav-btn-more.active {
+  background: #f7f4ed;
+  color: #171717;
+  border-color: #c9c4b9;
+}
+
+.fe-album-root.dark .nav-btn-more:hover,
+.fe-album-root.dark .nav-btn-more.active,
+.fe-album-root.dark .nav-btn-more:hover,
+.fe-album-root.dark .nav-btn-more.active {
+  background: #222220;
+  color: #ffffff;
+}
+
+.nav-more-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 270px;
+  background: #ffffff;
+  border: 1px solid #e8e5de;
+  border-radius: 18px;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.16), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  padding: 6px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fe-album-root.dark .nav-more-dropdown,
+.fe-album-root.dark .nav-more-dropdown {
+  background: #181817;
+  border-color: #292927;
+  box-shadow: 0 20px 40px -10px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.dropdown-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: none;
+  background: transparent;
+  color: #27272a;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.fe-album-root.dark .dropdown-item,
+.fe-album-root.dark .dropdown-item {
+  color: #e4e4e7;
+}
+
+.dropdown-item:hover {
+  background: #f7f4ed;
+  color: #09090b;
+}
+
+.fe-album-root.dark .dropdown-item:hover,
+.fe-album-root.dark .dropdown-item:hover {
+  background: #222220;
+  color: #ffffff;
+}
+
+.dropdown-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dropdown-badge {
+  font-size: 11px;
+  color: #a1a1aa;
+}
+
+.dropdown-item--fav {
+  color: inherit !important;
+}
+
+.dropdown-item--photographer {
+  color: #b45309 !important;
+  font-weight: 600;
+}
+
+.fe-album-root.dark .dropdown-item--photographer,
+.fe-album-root.dark .dropdown-item--photographer {
+  color: #FFC629 !important;
+}
+
+.dropdown-divider {
+  height: 1px;
+  background: #f0ede6;
+  margin: 4px 6px;
+}
+
+.fe-album-root.dark .dropdown-divider,
+.fe-album-root.dark .dropdown-divider {
+  background: #292927;
+}
+
+.dropdown-section-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #a1a1aa;
+  padding: 4px 12px 2px;
+}
+
+.dropdown-config-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 12px;
+  font-size: 12.5px;
+}
+
+.dropdown-config-label {
+  color: #71717a;
+  font-weight: 500;
+}
+
+.dropdown-toggle-group {
+  display: flex;
+  background: #f4f1ea;
+  padding: 2px;
+  border-radius: 8px;
+  gap: 2px;
+}
+
+.fe-album-root.dark .dropdown-toggle-group,
+.fe-album-root.dark .dropdown-toggle-group {
+  background: #222220;
+}
+
+.dropdown-toggle-btn {
+  border: none;
+  background: transparent;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.dropdown-toggle-btn.active {
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.fe-album-root.dark .dropdown-toggle-btn.active,
+.fe-album-root.dark .dropdown-toggle-btn.active {
+  background: #383835;
+  color: #ffffff;
+}
+
+.dropdown-theme-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12.5px;
+  color: #52525b;
+}
+
+.dropdown-theme-toggle:hover {
+  background: #f7f4ed;
+}
+
+.fe-album-root.dark .dropdown-theme-toggle:hover,
+.fe-album-root.dark .dropdown-theme-toggle:hover {
+  background: #222220;
+}
+
+.dropdown-theme-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dropdown-theme-switch {
+  width: 36px;
+  height: 20px;
+  background: #e4e4e7;
+  border-radius: 20px;
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.dropdown-theme-switch.on {
+  background: #FFC629;
+}
+
+.dropdown-theme-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  transition: transform 0.2s ease;
+}
+
+.dropdown-theme-switch.on .dropdown-theme-knob {
+  transform: translateX(16px);
+}
+
+/* AI Face Search Hero Banner (AIFS Luxury Design) */
+.gallery-face-hero-container {
+  width: 92%;
+  max-width: 1700px;
+  margin: 20px auto 0;
+}
+
+.aifs-face-hero-card {
+  border-radius: 24px;
+  border: 2px solid rgba(255, 198, 41, 0.45);
+  background: linear-gradient(135deg, rgba(255, 198, 41, 0.12) 0%, rgba(255, 198, 41, 0.04) 50%, rgba(255, 255, 255, 0.6) 100%);
+  padding: 22px 26px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 10px 30px -10px rgba(255, 198, 41, 0.15);
+  transition: all 0.25s ease;
+}
+
+.fe-album-root.dark .aifs-face-hero-card,
+.fe-album-root.dark .aifs-face-hero-card,
+[data-theme='dark'] .aifs-face-hero-card {
+  background: linear-gradient(135deg, rgba(255, 198, 41, 0.1) 0%, rgba(255, 198, 41, 0.02) 50%, rgba(24, 24, 23, 0.8) 100%);
+  border-color: rgba(255, 198, 41, 0.35);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+.aifs-face-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.aifs-face-hero-info {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.aifs-face-hero-icon-ring {
+  width: 50px;
+  height: 50px;
+  border-radius: 16px;
+  background: #FFC629;
+  color: #171717;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(255, 198, 41, 0.35);
+  flex-shrink: 0;
+}
+
+.aifs-face-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.aifs-face-hero-title {
+  font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #171717;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.fe-album-root.dark .aifs-face-hero-title,
+.fe-album-root.dark .aifs-face-hero-title {
+  color: #f5f5f4;
+}
+
+.aifs-face-hero-badge {
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: rgba(255, 198, 41, 0.25);
+  border: 1px solid rgba(255, 198, 41, 0.4);
+  color: #b45309;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.fe-album-root.dark .aifs-face-hero-badge,
+.fe-album-root.dark .aifs-face-hero-badge {
+  color: #FFC629;
+}
+
+.aifs-face-hero-desc {
+  font-size: 12.5px;
+  color: #686868;
+  margin: 3px 0 0;
+}
+
+.fe-album-root.dark .aifs-face-hero-desc,
+.fe-album-root.dark .aifs-face-hero-desc {
+  color: #a3a3a0;
+}
+
+.btn-aifs-selfie-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 11px 22px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%);
+  color: #171717;
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(255, 198, 41, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-aifs-selfie-cta:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(255, 198, 41, 0.45);
+  background: linear-gradient(135deg, #ffcf4d 0%, #f7c331 100%);
+}
+
+.btn-aifs-selfie-cta:active {
+  transform: scale(0.97);
+}
+
+.aifs-face-hero-people {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 198, 41, 0.25);
+}
+
+.fe-album-root.dark .aifs-face-hero-people,
+.fe-album-root.dark .aifs-face-hero-people {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+.aifs-face-hero-people-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.aifs-face-hero-people-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #475569;
+}
+
+.fe-album-root.dark .aifs-face-hero-people-label,
+.fe-album-root.dark .aifs-face-hero-people-label {
+  color: #cbd5e1;
+}
+
+.btn-aifs-clear-link {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #b45309;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.fe-album-root.dark .btn-aifs-clear-link,
+.fe-album-root.dark .btn-aifs-clear-link {
+  color: #FFC629;
+}
+
+/* Active Face Filter Banner */
+.aifs-active-face-banner {
+  width: 92%;
+  max-width: 1700px;
+  margin: 16px auto 0;
+  border-radius: 18px;
+  border: 2px solid rgba(255, 198, 41, 0.5);
+  background: rgba(255, 198, 41, 0.12);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.fe-album-root.dark .aifs-active-face-banner,
+.fe-album-root.dark .aifs-active-face-banner {
+  background: rgba(255, 198, 41, 0.08);
+  border-color: rgba(255, 198, 41, 0.4);
+}
+
+.active-face-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.active-face-thumb {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #FFC629;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  flex-shrink: 0;
+}
+
+.active-face-thumb-placeholder {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #FFC629;
+  color: #171717;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.active-face-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.active-face-title {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  color: #171717;
+}
+
+.fe-album-root.dark .active-face-title,
+.fe-album-root.dark .active-face-title {
+  color: #f5f5f4;
+}
+
+.active-face-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: #FFC629;
+  color: #171717;
+}
+
+.active-face-sub {
+  font-size: 11.5px;
+  color: #686868;
+  margin: 2px 0 0;
+}
+
+.fe-album-root.dark .active-face-sub,
+.fe-album-root.dark .active-face-sub {
+  color: #a3a3a0;
+}
+
+.active-face-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.btn-aifs-download-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 12px;
+  background: #FFC629;
+  color: #171717;
+  font-size: 12px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(255, 198, 41, 0.3);
+}
+
+.btn-aifs-download-active:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.btn-aifs-clear-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.08);
+  color: #171717;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fe-album-root.dark .btn-aifs-clear-active,
+.fe-album-root.dark .btn-aifs-clear-active {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f5f5f4;
+}
+
+.btn-aifs-clear-active:hover {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.fe-album-root.dark .btn-aifs-clear-active:hover,
+.fe-album-root.dark .btn-aifs-clear-active:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* 3. MASONRY GRID (CSS MULTI-COLUMN) */
+.gallery-main {
+  width: 88%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 32px 0 80px;
+}
+
+.gallery-favorites-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 18px;
+  margin-bottom: 24px;
+  background: #F8F6F0;
+  border: 1px solid #E8E5DE;
+  border-radius: 14px;
+}
+
+.favorites-header-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.favorites-header-icon {
+  font-size: 16px;
+}
+
+.favorites-header-text {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #FFC629;
+}
+
+.btn-fav-export-csv {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 14px;
   border-radius: 9999px;
-  background-color: #171717;
+  background: #10b981;
   color: #ffffff;
-  font-size: 12px;
-  font-weight: 500;
-  text-decoration: none;
-  cursor: pointer;
   border: none;
-  transition: opacity 0.2s ease;
-}
-.nav-action-btn:hover {
-  opacity: 0.85;
-}
-.nav-action-btn--secondary {
-  background-color: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-}
-.nav-action-btn--secondary:hover {
-  background-color: #e2e8f0;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+  transition: all 0.2s ease;
 }
 
-/* 3. MASONRY GRID (CSS MULTI-COLUMN) */
-.gallery-main {
-  width: 85%;
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 40px 0 80px;
+.btn-fav-export-csv:hover {
+  background: #059669;
+  transform: translateY(-1px);
 }
 
 .masonry-columns {
@@ -2070,81 +3631,194 @@ watch(() => props.album, () => {
     column-count: 3;
   }
 }
-@media (max-width: 768px) {
-  .masonry-columns {
-    column-count: 2;
-  }
-  .gallery-nav-inner {
-    width: 92%;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .gallery-main {
-    width: 92%;
-  }
-}
-@media (max-width: 480px) {
-  .masonry-columns {
-    column-count: 1;
-  }
-}
 
+/* Photo Card & Framing */
 .photo-card {
   break-inside: avoid;
   position: relative;
   margin-bottom: 16px;
-  background-color: #e2e8f0;
-  border-radius: 8px;
+  border-radius: 14px;
   overflow: hidden;
   cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.photo-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+.photo-card-frame {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 14px;
+  overflow: hidden;
+  background-color: #e2e8f0;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 14px -2px rgba(0, 0, 0, 0.06), 0 2px 6px -1px rgba(0, 0, 0, 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.photo-card img {
+.fe-album-root.dark .photo-card-frame,
+[data-theme='dark'] .photo-card-frame {
+  background-color: #18181b;
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.4);
+}
+
+.photo-card:hover .photo-card-frame {
+  transform: translateY(-3px);
+  border-color: rgba(139, 92, 246, 0.4);
+  box-shadow: 0 16px 32px -4px rgba(0, 0, 0, 0.16), 0 4px 10px rgba(0, 0, 0, 0.06);
+}
+
+.photo-card.is-selected .photo-card-frame {
+  border-color: #3b82f6 !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.4), 0 12px 28px rgba(59, 130, 246, 0.3) !important;
+}
+
+.photo-card-img {
   width: 100%;
   height: auto;
   display: block;
   object-fit: cover;
-  transition: transform 0.5s ease;
+  transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.photo-card:hover img {
-  transform: scale(1.02);
+.photo-card:hover .photo-card-img {
+  transform: scale(1.03);
+}
+
+/* Subtle Vignette Scrim */
+.photo-card-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.65) 0%, rgba(0, 0, 0, 0.1) 32%, transparent 60%);
+  opacity: 0.6;
+  transition: opacity 0.25s ease;
+}
+
+.photo-card:hover .photo-card-scrim {
+  opacity: 1;
+}
+
+/* Bottom info badge */
+.photo-card-info-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  opacity: 0;
+  transform: translateY(4px);
+  transition: all 0.25s ease;
+  pointer-events: none;
+  z-index: 8;
+}
+
+.photo-card:hover .photo-card-info-badge {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.photo-card-info-name {
+  font-size: 11px;
+  font-weight: 500;
+  color: #ffffff;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.photo-card-info-mp {
+  font-size: 10.5px;
+  font-family: monospace;
+  color: #FFC629;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* Quick Download Button */
+.btn-download-quick {
+  position: absolute;
+  top: 10px;
+  right: 54px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 12;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.photo-card:hover .btn-download-quick {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.btn-download-quick:hover {
+  background: rgba(15, 23, 42, 0.85);
+  transform: scale(1.1);
+  border-color: rgba(255, 255, 255, 0.35);
 }
 
 /* Heart Button */
 .btn-heart {
   position: absolute;
-  top: 12px;
-  right: 12px;
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  z-index: 10;
-  color: #ffffff;
+  top: 10px;
+  right: 10px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   display: flex;
   align-items: center;
   justify-content: center;
+  cursor: pointer;
+  z-index: 12;
+  transition: all 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.btn-heart:hover {
+  transform: scale(1.15);
+  background: rgba(15, 23, 42, 0.85);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.btn-heart:active {
+  transform: scale(0.9);
+}
+
+.btn-heart.is-favorited {
+  background: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.6);
 }
 
 .photo-heart-shadow {
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
 }
 
-.heart-interactive {
-  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-.heart-interactive:hover {
-  transform: scale(1.2);
-}
-.heart-interactive:active {
-  transform: scale(0.9);
+.photo-action-shadow {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
 }
 
 .gallery-empty-state {
@@ -2296,13 +3970,13 @@ watch(() => props.album, () => {
   transform: scale(0.98);
 }
 
-/* AI Button & Modal styles */
+/* AI Button & Filter styles - Unified Luxury Gold & Obsidian */
 .nav-action-btn--ai {
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%) !important;
-  color: #ffffff !important;
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%) !important;
+  color: #171717 !important;
   border: none !important;
-  box-shadow: 0 2px 8px rgba(124, 58, 237, 0.35);
-  font-weight: 500;
+  box-shadow: 0 2px 8px rgba(255, 198, 41, 0.35);
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -2310,32 +3984,39 @@ watch(() => props.album, () => {
 }
 .nav-action-btn--ai:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.45);
+  box-shadow: 0 4px 14px rgba(255, 198, 41, 0.45);
 }
 
 .filter-btn--ai {
-  border-color: #8b5cf6 !important;
-  color: #7c3aed !important;
+  border-color: rgba(255, 198, 41, 0.5) !important;
+  color: #171717 !important;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
+
+.fe-album-root.dark .filter-btn--ai,
+html.dark .filter-btn--ai {
+  color: #FFC629 !important;
+  border-color: rgba(255, 198, 41, 0.4) !important;
+}
+
 .filter-btn--ai.active {
-  background: #7c3aed !important;
-  color: #ffffff !important;
+  background: #FFC629 !important;
+  color: #171717 !important;
+  font-weight: 700;
 }
 
 .ai-match-badge {
   position: absolute;
   top: 10px;
   left: 10px;
-  background: rgba(124, 58, 237, 0.88);
-  color: #fff;
+  background: #FFC629;
+  color: #171717;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   padding: 4px 8px;
   border-radius: 9999px;
-  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -2411,8 +4092,8 @@ watch(() => props.album, () => {
   background: #f8fafc;
 }
 .ai-dropzone:hover {
-  border-color: #8b5cf6;
-  background: #f5f3ff;
+  border-color: #FFC629;
+  background: rgba(255, 198, 41, 0.1);
 }
 .ai-preview-box {
   position: relative;
@@ -2430,7 +4111,7 @@ watch(() => props.album, () => {
 }
 .ai-btn-primary {
   width: 100%;
-  background: linear-gradient(135deg, #7c3aed 0%, #4f46e5 100%);
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%); color: #171717;
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -2467,22 +4148,31 @@ watch(() => props.album, () => {
   position: absolute;
   top: 10px;
   left: 10px;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   border: 2px solid #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 5;
   cursor: pointer;
-  transition: all 0.15s ease;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.photo-select-checkbox:hover {
+  transform: scale(1.1);
+  border-color: #60a5fa;
 }
 
 .photo-select-checkbox.is-checked {
   background: #3b82f6;
-  border-color: #3b82f6;
+  border-color: #ffffff;
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.7);
 }
 
 .photo-card.is-selected {
@@ -2497,22 +4187,34 @@ watch(() => props.album, () => {
   left: 50%;
   transform: translateX(-50%);
   z-index: 9999;
-  background: rgba(24, 24, 27, 0.95);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(18, 18, 22, 0.94);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 9999px;
-  padding: 10px 20px;
+  padding: 8px 16px;
   display: flex;
   align-items: center;
-  gap: 16px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  gap: 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
   color: #ffffff;
+  max-width: 92vw;
+}
+
+.selection-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 6px;
+  border-right: 1px solid rgba(255, 255, 255, 0.15);
 }
 
 .selection-count {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 700;
+  color: #60a5fa;
   font-family: monospace;
+  white-space: nowrap;
 }
 
 .selection-actions {
@@ -2522,33 +4224,188 @@ watch(() => props.album, () => {
 }
 
 .btn-selection-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 14px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   border-radius: 9999px;
-  border: 1px solid #3f3f46;
-  background: #27272a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
   cursor: pointer;
-  transition: all 0.15s;
+  white-space: nowrap;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.btn-selection-action:hover {
-  background: #3f3f46;
+.btn-selection-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.18);
+  transform: translateY(-1px);
+}
+
+.btn-selection-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-selection-action--fav {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.btn-selection-action--fav:hover:not(:disabled) {
+  background: rgba(255, 198, 41, 0.25);
+  border-color: #FFC629;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(255, 198, 41, 0.35);
+}
+
+.btn-selection-action--csv {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.btn-selection-action--csv:hover:not(:disabled) {
+  background: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(16, 185, 129, 0.35);
 }
 
 .btn-selection-action--primary {
-  background: #3b82f6;
-  border-color: #3b82f6;
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%);
+  border-color: #FFC629;
+  color: #171717;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(255, 198, 41, 0.4);
 }
 
-.btn-selection-action--primary:hover {
-  background: #2563eb;
+.btn-selection-action--primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #FFD04D 0%, #FFC629 100%);
+  box-shadow: 0 4px 14px rgba(255, 198, 41, 0.55);
 }
 
-.btn-selection-action--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.btn-selection-action--close {
+  padding: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+}
+
+.btn-selection-action--close:hover {
+  background: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+/* Lightbox Stage & Face Frames */
+.lightbox-stage {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0;
+}
+
+.lightbox-main-img {
+  max-width: calc(100vw - 120px);
+  max-height: calc(100vh - 140px);
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+  border-radius: 4px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+}
+
+.lightbox-face-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lightbox-face-frame {
+  position: absolute;
+  pointer-events: auto;
+  border: 2px solid rgba(255, 198, 41, 0.9);
+  background: rgba(255, 198, 41, 0.15);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4), 0 0 16px rgba(255, 198, 41, 0.35);
+}
+
+.lightbox-face-frame:hover {
+  border-color: #FFC629;
+  background: rgba(56, 189, 248, 0.28);
+  transform: scale(1.04);
+  box-shadow: 0 0 0 2px #38bdf8, 0 0 24px rgba(56, 189, 248, 0.6);
+  z-index: 10;
+}
+
+.face-frame-corner {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-color: #ffffff;
+  border-style: solid;
+  pointer-events: none;
+}
+.face-frame-corner.tl {
+  top: -2px;
+  left: -2px;
+  border-width: 2px 0 0 2px;
+  border-top-left-radius: 3px;
+}
+.face-frame-corner.tr {
+  top: -2px;
+  right: -2px;
+  border-width: 2px 2px 0 0;
+  border-top-right-radius: 3px;
+}
+.face-frame-corner.bl {
+  bottom: -2px;
+  left: -2px;
+  border-width: 0 0 2px 2px;
+  border-bottom-left-radius: 3px;
+}
+.face-frame-corner.br {
+  bottom: -2px;
+  right: -2px;
+  border-width: 0 2px 2px 0;
+  border-bottom-right-radius: 3px;
+}
+
+.face-frame-chip {
+  position: absolute;
+  top: -24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #FFC629;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 9999px;
+  white-space: nowrap;
+  pointer-events: none;
+  letter-spacing: 0.03em;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .nav-action-btn--ios {
@@ -2624,16 +4481,25 @@ watch(() => props.album, () => {
   }
 }
 @media (max-width: 768px) {
+  .masonry-columns {
+    column-count: 2 !important;
+    column-gap: 10px;
+  }
   .masonry-columns.view-large {
-    column-count: 1;
+    column-count: 1 !important;
   }
   .masonry-columns.view-compact {
-    column-count: 3;
+    column-count: 2 !important;
+    column-gap: 8px;
   }
 }
 @media (max-width: 480px) {
+  .masonry-columns {
+    column-count: 2 !important;
+    column-gap: 8px;
+  }
   .masonry-columns.view-compact {
-    column-count: 2;
+    column-count: 2 !important;
   }
 }
 
@@ -2919,7 +4785,7 @@ watch(() => props.album, () => {
   width: 20px;
   height: 20px;
   border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #38bdf8;
+  border-top-color: #FFC629;
   border-radius: 50%;
   animation: fe-spin 0.8s linear infinite;
   flex-shrink: 0;
@@ -2942,7 +4808,7 @@ watch(() => props.album, () => {
 .indexing-banner-percent {
   font-size: 0.925rem;
   font-weight: 700;
-  color: #38bdf8;
+  color: #FFC629;
 }
 .indexing-banner-bar {
   margin-top: 0.65rem;
@@ -3019,7 +4885,7 @@ watch(() => props.album, () => {
 .quick-exif-mp {
   font-family: monospace;
   font-weight: 600;
-  color: #38bdf8;
+  color: #FFC629;
 }
 
 .quick-exif-action {
@@ -3102,7 +4968,7 @@ watch(() => props.album, () => {
 
 .lightbox-face-avatar-btn:hover {
   transform: scale(1.15);
-  border-color: #38bdf8;
+  border-color: #FFC629;
   box-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
 }
 
@@ -3131,4 +4997,932 @@ watch(() => props.album, () => {
   background: rgba(255, 255, 255, 0.2);
   color: #ffffff;
 }
+
+/* =========================================================================
+   COMPREHENSIVE MOBILE FRIENDLY & RESPONSIVE TWEAKS (max-width: 768px)
+   ========================================================================= */
+@media (max-width: 768px) {
+  /* Sticky Navbar on Mobile */
+  .gallery-nav-inner {
+    width: 94%;
+    padding: 8px 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .gallery-nav-title-group {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .gallery-nav-title {
+    font-size: 1.15rem;
+  }
+  .gallery-nav-actions {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 8px;
+  }
+  .gallery-nav-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-action-btn {
+    padding: 6px 12px;
+    font-size: 12px;
+    min-height: 36px;
+  }
+  .filter-btn {
+    padding: 5px 10px;
+    font-size: 11.5px;
+  }
+
+  /* Gallery Main & People container */
+  .gallery-main {
+    width: 94%;
+    padding: 16px 0 60px;
+  }
+  .gallery-people-container,
+  .gallery-active-filter-banner {
+    width: 94%;
+  }
+
+  /* Photo Cards */
+  .photo-card {
+    margin-bottom: 10px;
+    border-radius: 10px;
+  }
+  .photo-card-frame {
+    border-radius: 10px;
+  }
+  .photo-card-info-badge {
+    bottom: 4px;
+    left: 4px;
+    right: 4px;
+    padding: 2px 6px;
+    gap: 4px;
+  }
+  .photo-card-filename {
+    font-size: 10px;
+    max-width: 100px;
+  }
+  .photo-card-mp {
+    font-size: 9.5px;
+  }
+  .photo-select-checkbox {
+    width: 24px;
+    height: 24px;
+    top: 6px;
+    left: 6px;
+  }
+  .photo-favorite-btn {
+    top: 6px;
+    right: 6px;
+    width: 32px;
+    height: 32px;
+  }
+
+  /* Floating Selection Bar */
+  .gallery-selection-bar {
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    width: calc(100% - 24px);
+    max-width: 440px;
+    padding: 8px 12px;
+    gap: 8px;
+    justify-content: space-between;
+  }
+  .selection-bar-left {
+    padding-right: 4px;
+  }
+  .selection-count {
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .selection-actions {
+    gap: 6px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .selection-actions::-webkit-scrollbar {
+    display: none;
+  }
+  .btn-selection-action {
+    padding: 5px 10px;
+    font-size: 11px;
+    min-height: 32px;
+  }
+
+  /* Lightbox Controls & Stage */
+  .lightbox-topbar {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .lightbox-counter {
+    font-size: 12px;
+  }
+  .lightbox-actions {
+    gap: 6px;
+  }
+  .lightbox-btn {
+    padding: 6px 8px;
+    font-size: 12px;
+    min-height: 38px;
+  }
+  .lightbox-btn span {
+    display: none; /* Hide button text labels on mobile lightbox to avoid overflow */
+  }
+  .lightbox-center {
+    padding: 6px;
+  }
+  .lightbox-main-img {
+    max-width: 100vw;
+    max-height: calc(100vh - 120px);
+    border-radius: 0;
+  }
+  .lightbox-nav-btn {
+    width: 40px;
+    height: 40px;
+  }
+  .lightbox-nav-btn.left {
+    left: 8px;
+  }
+  .lightbox-nav-btn.right {
+    right: 8px;
+  }
+
+  /* EXIF Bottom Sheet on Mobile */
+  .lightbox-exif-drawer {
+    right: 0;
+    left: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    max-width: 100vw;
+    max-height: 75vh;
+    border-radius: 20px 20px 0 0;
+    padding: 16px 16px calc(24px + env(safe-area-inset-bottom));
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.7);
+    border-right: none;
+    border-left: none;
+    border-bottom: none;
+  }
+}
+
+/* 6. FLOATING BATCH SELECTION BAR (AIFS Luxury Design) */
+.gallery-selection-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  background: rgba(24, 24, 27, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 9999px;
+  padding: 8px 14px 8px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 198, 41, 0.25);
+  max-width: 90vw;
+  animation: fe-slide-up-dock 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes fe-slide-up-dock {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.selection-bar-left {
+  display: flex;
+  align-items: center;
+}
+
+.selection-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FFC629;
+  white-space: nowrap;
+}
+
+.selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.btn-selection-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-selection-action:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.btn-selection-action:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-selection-action--fav {
+  border-color: rgba(255, 255, 255, 0.3);
+  background: rgba(255, 198, 41, 0.2);
+  color: #ffffff;
+}
+
+.btn-selection-action--fav:hover:not(:disabled) {
+  background: rgba(255, 198, 41, 0.25);
+  border-color: #FFC629;
+}
+
+.btn-selection-action--csv {
+  border-color: rgba(255, 198, 41, 0.4);
+  background: rgba(255, 198, 41, 0.15);
+  color: #FFC629;
+}
+
+.btn-selection-action--csv:hover:not(:disabled) {
+  background: rgba(255, 198, 41, 0.25);
+  border-color: rgba(255, 198, 41, 0.6);
+}
+
+.btn-selection-action--primary {
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%);
+  color: #171717;
+  font-weight: 700;
+  border: none;
+  box-shadow: 0 2px 10px rgba(255, 198, 41, 0.4);
+}
+
+.btn-selection-action--primary:hover:not(:disabled) {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.btn-selection-action--close {
+  padding: 6px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #a1a1aa;
+}
+
+.btn-selection-action--close:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+/* Checkbox indicator in Select Mode */
+.photo-select-checkbox {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.5);
+  border: 2px solid rgba(255, 255, 255, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 15;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+
+.photo-select-checkbox.is-checked {
+  background: #FFC629;
+  border-color: #FFC629;
+  box-shadow: 0 0 10px rgba(255, 198, 41, 0.6);
+}
+
+.photo-select-checkbox-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* Density classes for grid */
+.masonry-columns.view-standard {
+  column-count: 4;
+}
+
+.masonry-columns.view-large {
+  column-count: 3;
+}
+
+.masonry-columns.view-compact {
+  column-count: 6;
+}
+
+@media (max-width: 1280px) {
+  .masonry-columns.view-standard {
+    column-count: 3;
+  }
+  .masonry-columns.view-compact {
+    column-count: 4;
+  }
+}
+
+@media (max-width: 768px) {
+  .masonry-columns,
+  .masonry-columns.view-standard,
+  .masonry-columns.view-large,
+  .masonry-columns.view-compact {
+    column-count: 2 !important;
+    column-gap: 8px !important;
+  }
+  .photo-card {
+    margin-bottom: 8px !important;
+    border-radius: 10px !important;
+  }
+  .photo-card-frame {
+    border-radius: 10px !important;
+  }
+}
+
+/* Aspect ratio: square */
+.photo-card.card-square .photo-card-frame {
+  aspect-ratio: 1 / 1;
+}
+
+.photo-card.card-square .photo-card-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 </style>
+
+
+/* =========================================================================
+   AIFS LUXURY GOLD SELFIE MODAL STYLES
+   ========================================================================= */
+.aifs-selfie-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.75);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: aifsFadeIn 0.2s ease-out;
+}
+
+@keyframes aifsFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.aifs-selfie-modal-card {
+  position: relative;
+  background: #FFFFFF;
+  border-radius: 24px;
+  padding: 28px;
+  max-width: 480px;
+  width: 100%;
+  border: 1px solid #E8E5DE;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-height: 90vh;
+  overflow-y: auto;
+  animation: aifsSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dark .aifs-selfie-modal-card,
+.fe-album-root.dark .aifs-selfie-modal-card,
+html.dark .aifs-selfie-modal-card,
+body.dark .aifs-selfie-modal-card {
+  background: #181817;
+  border-color: #292927;
+  color: #F5F5F4;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+}
+
+@keyframes aifsSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.aifs-selfie-modal-close {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  padding: 8px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: #686868;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.aifs-selfie-modal-close:hover {
+  background: #F8F6F0;
+  color: #171717;
+}
+
+.dark .aifs-selfie-modal-close:hover,
+html.dark .aifs-selfie-modal-close:hover {
+  background: #222220;
+  color: #FFFFFF;
+}
+
+.aifs-selfie-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding-right: 32px;
+  margin-bottom: 22px;
+}
+
+.aifs-selfie-modal-icon-ring {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255, 198, 41, 0.18);
+  border: 1px solid rgba(255, 198, 41, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #d97706;
+}
+
+.dark .aifs-selfie-modal-icon-ring,
+html.dark .aifs-selfie-modal-icon-ring {
+  color: #FFC629;
+}
+
+.aifs-selfie-modal-title {
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: #171717;
+  margin: 0;
+  line-height: 1.25;
+}
+
+.dark .aifs-selfie-modal-title,
+html.dark .aifs-selfie-modal-title {
+  color: #F5F5F4;
+}
+
+.aifs-selfie-modal-subtitle {
+  font-size: 12px;
+  color: #686868;
+  margin: 4px 0 0;
+}
+
+.dark .aifs-selfie-modal-subtitle,
+html.dark .aifs-selfie-modal-subtitle {
+  color: #A3A3A0;
+}
+
+/* Modal Options */
+.aifs-selfie-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-selfie-camera {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 18px;
+  min-height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%);
+  color: #171717;
+  font-weight: 700;
+  font-size: 13.5px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(255, 198, 41, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-selfie-camera:hover {
+  background: linear-gradient(135deg, #FFD04D 0%, #FFC629 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(255, 198, 41, 0.45);
+}
+
+.btn-selfie-camera:active {
+  transform: scale(0.98);
+}
+
+.btn-selfie-gallery {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 13px 18px;
+  min-height: 48px;
+  border-radius: 16px;
+  background: #F8F6F0;
+  color: #171717;
+  font-weight: 600;
+  font-size: 13.5px;
+  border: 1px solid #E8E5DE;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dark .btn-selfie-gallery,
+html.dark .btn-selfie-gallery {
+  background: #222220;
+  color: #F5F5F4;
+  border-color: #292927;
+}
+
+.btn-selfie-gallery:hover {
+  background: #E8E5DE;
+}
+
+.dark .btn-selfie-gallery:hover,
+html.dark .btn-selfie-gallery:hover {
+  background: #2B2B28;
+}
+
+.btn-selfie-gallery:active {
+  transform: scale(0.98);
+}
+
+.aifs-selfie-privacy-note {
+  margin-top: 8px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #F8F6F0;
+  border: 1px solid #E8E5DE;
+  font-size: 11.5px;
+  color: #686868;
+  line-height: 1.5;
+}
+
+.dark .aifs-selfie-privacy-note,
+html.dark .aifs-selfie-privacy-note {
+  background: rgba(34, 34, 32, 0.6);
+  border-color: #292927;
+  color: #A3A3A0;
+}
+
+/* Preview Section */
+.aifs-selfie-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.aifs-selfie-preview-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border-radius: 18px;
+  background: #F8F6F0;
+  border: 1px solid #E8E5DE;
+}
+
+.dark .aifs-selfie-preview-card,
+html.dark .aifs-selfie-preview-card {
+  background: #222220;
+  border-color: #292927;
+}
+
+.aifs-selfie-preview-img {
+  width: 76px;
+  height: 76px;
+  border-radius: 14px;
+  object-fit: cover;
+  border: 2px solid #FFC629;
+  box-shadow: 0 4px 12px rgba(255, 198, 41, 0.25);
+  flex-shrink: 0;
+}
+
+.aifs-selfie-preview-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.aifs-selfie-preview-heading {
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #171717;
+  margin: 0 0 4px;
+}
+
+.dark .aifs-selfie-preview-heading,
+html.dark .aifs-selfie-preview-heading {
+  color: #F5F5F4;
+}
+
+.aifs-selfie-preview-desc {
+  font-size: 11px;
+  color: #686868;
+  margin: 0 0 8px;
+  line-height: 1.4;
+}
+
+.dark .aifs-selfie-preview-desc,
+html.dark .aifs-selfie-preview-desc {
+  color: #A3A3A0;
+}
+
+.btn-selfie-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #d97706;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.dark .btn-selfie-change,
+html.dark .btn-selfie-change {
+  color: #FFC629;
+}
+
+.aifs-selfie-searching-box {
+  padding: 24px 16px;
+  border-radius: 18px;
+  background: rgba(255, 198, 41, 0.1);
+  border: 1px solid rgba(255, 198, 41, 0.35);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.aifs-selfie-spinner {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 198, 41, 0.2);
+  border-top-color: #FFC629;
+  animation: aifsSpin 0.75s linear infinite;
+}
+
+@keyframes aifsSpin {
+  to { transform: rotate(360deg); }
+}
+
+.aifs-selfie-searching-step {
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  color: #171717;
+  margin: 4px 0 0;
+}
+
+.dark .aifs-selfie-searching-step,
+html.dark .aifs-selfie-searching-step {
+  color: #F5F5F4;
+}
+
+.aifs-selfie-searching-hint {
+  font-size: 11px;
+  color: #686868;
+  margin: 0;
+}
+
+.btn-selfie-submit {
+  width: 100%;
+  padding: 14px 18px;
+  min-height: 48px;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #FFC629 0%, #F2B91B 100%);
+  color: #171717;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(255, 198, 41, 0.35);
+  transition: all 0.2s ease;
+}
+
+.btn-selfie-submit:hover {
+  background: linear-gradient(135deg, #FFD04D 0%, #FFC629 100%);
+  transform: translateY(-1px);
+}
+
+.btn-selfie-submit:active {
+  transform: scale(0.98);
+}
+
+.aifs-selfie-error-banner {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #F8F6F0;
+  border: 1px solid #E8E5DE;
+  color: #171717;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.dark .aifs-selfie-error-banner,
+html.dark .aifs-selfie-error-banner {
+  background: #181817;
+  border-color: #292927;
+  color: #F5F5F4;
+}
+
+
+/* =========================================================================
+   LUXURY PRELOAD SPLASH SCREEN STYLES
+   ========================================================================= */
+.fe-gallery-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 999999;
+  background-color: #FFFDF8;
+  color: #171717;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.fe-gallery-splash.dark,
+.fe-album-root.dark .fe-gallery-splash,
+html.dark .fe-gallery-splash,
+body.dark .fe-gallery-splash {
+  background-color: #0E0E0D;
+  color: #F5F5F4;
+}
+
+.splash-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.splash-logo-text {
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-weight: 900;
+  font-size: 32px;
+  letter-spacing: -0.05em;
+  color: inherit;
+  margin-bottom: 8px;
+}
+
+.splash-gold-dot {
+  color: #FFC629;
+}
+
+.splash-logo-img {
+  height: 48px;
+  max-width: 220px;
+  object-fit: contain;
+  margin-bottom: 12px;
+}
+
+.splash-title {
+  font-family: 'Montserrat', 'Inter', sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: inherit;
+  margin: 0 0 4px;
+}
+
+.splash-client {
+  font-size: 12px;
+  color: #686868;
+  margin: 0 0 16px;
+}
+
+.dark .splash-client,
+html.dark .splash-client {
+  color: #A3A3A0;
+}
+
+.splash-gold-spinner {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 198, 41, 0.2);
+  border-top-color: #FFC629;
+  animation: aifsSpin 0.75s linear infinite;
+  margin: 12px 0 14px;
+}
+
+.splash-subtext {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: #686868;
+}
+
+.dark .splash-subtext,
+html.dark .splash-subtext {
+  color: #A3A3A0;
+}
+
+.fe-splash-fade-leave-active {
+  transition: opacity 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.fe-splash-fade-leave-to {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* UI Hidden / Immersive Full Photo Mode */
+.lightbox-modal.ui-hidden .lightbox-topbar,
+.lightbox-modal.ui-hidden .lightbox-bottombar,
+.lightbox-modal.ui-hidden .lightbox-floating-info-pill,
+.lightbox-modal.ui-hidden .lightbox-faces-pill-container,
+.lightbox-modal.ui-hidden .lightbox-nav-btn {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.lightbox-topbar,
+.lightbox-bottombar,
+.lightbox-floating-info-pill,
+.lightbox-faces-pill-container,
+.lightbox-nav-btn {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.lightbox-main-img {
+  cursor: pointer;
+  transition: max-width 0.25s ease, max-height 0.25s ease;
+}
+
+.lightbox-modal.ui-hidden .lightbox-main-img {
+  max-width: 100vw !important;
+  max-height: 100vh !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+}
+
+.lightbox-floating-info-pill {
+  position: absolute;
+  left: 20px;
+  bottom: 54px;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.lightbox-faces-pill-container {
+  position: absolute;
+  bottom: 54px;
+  left: 0;
+  right: 0;
+  z-index: 45;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+  padding: 0 16px;
+}

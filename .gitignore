@@ -19,6 +19,7 @@
 /desktop/dist/
 /desktop/app/
 /desktop/release/
+/storage-local
 # scripts/store-e2e.mjs builds its MSIX variant here
 /desktop/release-e2e/
 # The bundled sync engine, produced at package time by scripts/fetch-cli.mjs.

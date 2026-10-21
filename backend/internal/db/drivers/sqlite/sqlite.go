@@ -2108,13 +2108,13 @@ func (s *Store) DeleteFileGrant(ctx context.Context, id int64) error {
 // ⚠ COALESCE on every nullable text column: 00046 adds state_json/files_json
 // as NULLABLE (MySQL cannot default a TEXT column), and scanning NULL into a
 // Go string fails inside the driver rather than anywhere that could explain it.
-const shareCols = `id, node_id, token, COALESCE(pin_hash,''), expires_at, max_downloads, download_count, created_by, COALESCE(created_via,''), created_at, COALESCE(kind,'download'), max_uploads, upload_count, drop_settings, plugin_id, COALESCE(page_id,''), COALESCE(subject,''), COALESCE(state_json,''), COALESCE(files_json,''), pin_fails, locked_until, COALESCE(pin_enc,''), visit_count, COALESCE(purpose_json,''), COALESCE(app_root,'')`
+const shareCols = `id, node_id, token, COALESCE(pin_hash,''), expires_at, max_downloads, download_count, created_by, COALESCE(created_via,''), created_at, COALESCE(kind,'download'), max_uploads, upload_count, drop_settings, plugin_id, COALESCE(page_id,''), COALESCE(subject,''), COALESCE(state_json,''), COALESCE(files_json,''), pin_fails, locked_until, COALESCE(pin_enc,''), visit_count, COALESCE(purpose_json,''), COALESCE(app_root,''), COALESCE(aifs_enabled,0)`
 
 func (s *Store) CreateShare(ctx context.Context, sh *model.Share) (*model.Share, error) {
 	res, err := s.conn(ctx).ExecContext(ctx,
-		`INSERT INTO shares (node_id, token, pin_hash, pin_enc, expires_at, max_downloads, created_by, created_via, kind, max_uploads, drop_settings, plugin_id, page_id, subject, state_json, files_json, purpose_json, app_root) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO shares (node_id, token, pin_hash, pin_enc, expires_at, max_downloads, created_by, created_via, kind, max_uploads, drop_settings, plugin_id, page_id, subject, state_json, files_json, purpose_json, app_root, aifs_enabled) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		sh.NodeID, sh.Token, sh.PinHash, sh.PinEnc, sh.ExpiresAt, sh.MaxDownloads, sh.CreatedBy, sh.CreatedVia, shareKind(sh.Kind), sh.MaxUploads, sh.DropSettings,
-		sh.PluginID, sh.PageID, sh.Subject, sh.StateJSON, sh.FilesJSON, sh.PurposeJSON, sh.AppRoot)
+		sh.PluginID, sh.PageID, sh.Subject, sh.StateJSON, sh.FilesJSON, sh.PurposeJSON, sh.AppRoot, btoi(sh.AIFSEnabled))
 	if err != nil {
 		return nil, err
 	}
@@ -2124,6 +2124,13 @@ func (s *Store) CreateShare(ctx context.Context, sh *model.Share) (*model.Share,
 	sh.HasPin = sh.PinHash != ""
 	sh.PinRecoverable = sh.PinEnc != ""
 	return sh, nil
+}
+
+func (s *Store) UpdateShare(ctx context.Context, sh *model.Share) error {
+	_, err := s.conn(ctx).ExecContext(ctx,
+		`UPDATE shares SET pin_hash=?, pin_enc=?, expires_at=?, max_downloads=?, kind=?, max_uploads=?, drop_settings=?, aifs_enabled=?, revoked_at=NULL WHERE id=?`,
+		sh.PinHash, sh.PinEnc, sh.ExpiresAt, sh.MaxDownloads, shareKind(sh.Kind), sh.MaxUploads, sh.DropSettings, btoi(sh.AIFSEnabled), sh.ID)
+	return err
 }
 
 func (s *Store) GetShareByToken(ctx context.Context, token string) (*model.Share, error) {
@@ -3187,12 +3194,14 @@ func scanUser(r rowScanner) (*model.User, error) {
 
 func scanShare(r rowScanner) (*model.Share, error) {
 	sh := &model.Share{}
+	var aifsEnabled int
 	if err := r.Scan(&sh.ID, &sh.NodeID, &sh.Token, &sh.PinHash, &sh.ExpiresAt, &sh.MaxDownloads, &sh.DownloadCount, &sh.CreatedBy, &sh.CreatedVia, &sh.CreatedAt, &sh.Kind, &sh.MaxUploads, &sh.UploadCount, &sh.DropSettings,
-		&sh.PluginID, &sh.PageID, &sh.Subject, &sh.StateJSON, &sh.FilesJSON, &sh.PinFails, &sh.LockedUntil, &sh.PinEnc, &sh.VisitCount, &sh.PurposeJSON, &sh.AppRoot); err != nil {
+		&sh.PluginID, &sh.PageID, &sh.Subject, &sh.StateJSON, &sh.FilesJSON, &sh.PinFails, &sh.LockedUntil, &sh.PinEnc, &sh.VisitCount, &sh.PurposeJSON, &sh.AppRoot, &aifsEnabled); err != nil {
 		return nil, err
 	}
 	sh.HasPin = sh.PinHash != ""
 	sh.PinRecoverable = sh.PinEnc != ""
+	sh.AIFSEnabled = aifsEnabled != 0
 	return sh, nil
 }
 

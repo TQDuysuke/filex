@@ -388,16 +388,16 @@ async function handleShareSinglePhoto(photo: AlbumItem) {
   font-size: 12px;
   font-weight: 700;
   border-radius: 8px;
-  border: 1px solid #3b82f6;
-  background: #3b82f6;
-  color: #ffffff;
+  border: 1px solid #FFC629;
+  background: #FFC629;
+  color: #171717;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
 }
 
 .ios-save-btn:hover {
-  background: #2563eb;
+  background: #F2B91B;
 }
 
 .ios-save-btn.is-saved {

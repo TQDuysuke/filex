@@ -29,30 +29,20 @@
    * radii were read off the shell this look follows, in a real browser at
    * 1440, and the palette clears the contrast bar in
    * web/tests/api/themeContrast.test.ts in both variants. */
-  --fe-bg: #ffffff;
-  --fe-bg-elev: #f7f8fb;
-  --fe-bg-hover: #f3f4f6;
-  --fe-bg-selected: #eef3ff;
-  --fe-border: #e5e7eb;
-  --fe-border-soft: #eef0f4;
-  --fe-border-strong: #d1d5db;
-  --fe-text: #1f2937;
-  --fe-text-muted: #6b7280;
-  --fe-text-on-primary: #ffffff;
-  --fe-primary: #2f6ceb;
-  --fe-primary-hover: #2559c9;
-  --fe-primary-soft: #e6ecfa;
-  /* Ink for text and icons ON the soft-primary ground — the active sidebar
-     row, the active scope tab, the active segment of a segmented control.
-     ⚠ It is a token of its own because `--fe-primary` cannot carry that job:
-     measured, the stock primary on the stock tint is 3.97:1, under the 4.5 the
-     palette file claims, and no tint rescues it (the primary is only 4.70:1 on
-     white to begin with). It is not `--fe-primary-hover` either, though that is
-     the value HERE: three of the shipped palettes darken their hover in dark
-     mode, toward the tint rather than away from it, and Night dark measures
-     3.78:1 that way. Each palette names the ink that clears the bar on its own
-     tint; web/tests/api/themeContrast.test.ts pins the pairing. */
-  --fe-primary-ink: #2559c9;
+  --fe-bg: #FFFDF8;
+  --fe-bg-elev: #FFFFFF;
+  --fe-bg-hover: #F8F6F0;
+  --fe-bg-selected: #FFF2CC;
+  --fe-border: #E8E5DE;
+  --fe-border-soft: #F4F1EA;
+  --fe-border-strong: #DCD7CE;
+  --fe-text: #171717;
+  --fe-text-muted: #686868;
+  --fe-text-on-primary: #171717;
+  --fe-primary: #FFC629;
+  --fe-primary-hover: #F2B91B;
+  --fe-primary-soft: #FFF2CC;
+  --fe-primary-ink: #171717;
   --fe-danger: #dc2626;
   --fe-danger-hover: #b91c1c;
   --fe-keep-ok: #16a34a; /* selective-sync "on this computer" check */
@@ -137,25 +127,23 @@
  * as white-on-white inside dark hosts. */
 .fe-ctx-backdrop--theme-dark,
 .fe-ctx-backdrop--theme-auto[data-prefers-dark='1'] {
-  --fe-bg: #15171c;
-  --fe-bg-elev: #1a1d23;
-  --fe-bg-hover: #1f232a;
-  --fe-bg-selected: #1c2740;
-  --fe-border: #2e333c;
-  --fe-border-soft: #262a32;
-  --fe-border-strong: #3d444f;
-  --fe-text: #e6e8ec;
-  --fe-text-muted: #888f9b;
-  /* Dark ink on the light-blue button. White measures 3.16:1 against it —
-   * the bar for text on a primary surface is 4.5, and #15171c measures 5.67. */
-  --fe-text-on-primary: #15171c;
-  --fe-primary: #5b8cff;
-  --fe-primary-hover: #7ba3ff;
-  --fe-primary-soft: #1c2740;
-  --fe-primary-ink: #7ba3ff;
+  --fe-bg: #0E0E0D;
+  --fe-bg-elev: #181817;
+  --fe-bg-hover: #222220;
+  --fe-bg-selected: #382E0B;
+  --fe-border: #292927;
+  --fe-border-soft: #1F1F1E;
+  --fe-border-strong: #3D3D3A;
+  --fe-text: #F5F5F4;
+  --fe-text-muted: #A3A3A0;
+  --fe-text-on-primary: #171717;
+  --fe-primary: #FFC629;
+  --fe-primary-hover: #F2B91B;
+  --fe-primary-soft: #382E0B;
+  --fe-primary-ink: #FFC629;
   --fe-danger: #f87171;
   --fe-danger-hover: #ef4444;
-    --fe-keep-ok: #4ade80;
+  --fe-keep-ok: #4ade80;
   --fe-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   --fe-shadow-sm: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
@@ -164,21 +152,20 @@
   .fe:not(.fe--theme-light),
   /* Same trick for the teleported backdrop in auto mode. */
   .fe-ctx-backdrop--theme-auto:not(.fe-ctx-backdrop--theme-light) {
-    --fe-bg: #15171c;
-    --fe-bg-elev: #1a1d23;
-    --fe-bg-hover: #1f232a;
-    --fe-bg-selected: #1c2740;
-    --fe-border: #2e333c;
-    --fe-border-soft: #262a32;
-    --fe-border-strong: #3d444f;
-    --fe-text: #e6e8ec;
-    --fe-text-muted: #888f9b;
-    /* See the note on the class-based dark block above. */
-    --fe-text-on-primary: #15171c;
-    --fe-primary: #5b8cff;
-    --fe-primary-hover: #7ba3ff;
-    --fe-primary-soft: #1c2740;
-    --fe-primary-ink: #7ba3ff;
+    --fe-bg: #0E0E0D;
+    --fe-bg-elev: #181817;
+    --fe-bg-hover: #222220;
+    --fe-bg-selected: #382E0B;
+    --fe-border: #292927;
+    --fe-border-soft: #1F1F1E;
+    --fe-border-strong: #3D3D3A;
+    --fe-text: #F5F5F4;
+    --fe-text-muted: #A3A3A0;
+    --fe-text-on-primary: #171717;
+    --fe-primary: #FFC629;
+    --fe-primary-hover: #F2B91B;
+    --fe-primary-soft: #382E0B;
+    --fe-primary-ink: #FFC629;
     --fe-danger: #f87171;
     --fe-danger-hover: #ef4444;
     --fe-keep-ok: #4ade80;
@@ -295,10 +282,10 @@
  * web/tests/api/themeTokens.test.ts reads this file alone, and a `--fe-*`
  * declared anywhere else is a phantom token to every other reader. */
 .fe.fe-ppage {
-  --fe-ppage-ground-1: #f5f7fb;
-  --fe-ppage-ground-2: #e9edf4;
-  --fe-ppage-card: #ffffff;
-  --fe-ppage-shadow: 0 12px 40px rgba(15, 23, 42, 0.1);
+  --fe-ppage-ground-1: #FFFDF8;
+  --fe-ppage-ground-2: #F8F6F0;
+  --fe-ppage-card: #FFFFFF;
+  --fe-ppage-shadow: 0 12px 40px rgba(0, 0, 0, 0.06);
   --fe-ppage-ok: var(--fe-ok);
   /* The card's width, set by the shell's `layout` (lib/publicLayout):
      the gate's 400px here, 520 and 880 below. */
@@ -308,17 +295,17 @@
 :root[data-theme='dark'] .fe.fe-ppage,
 :root.dark .fe.fe-ppage,
 .dark .fe.fe-ppage {
-  --fe-ppage-ground-1: #12151a;
-  --fe-ppage-ground-2: #191e25;
-  --fe-ppage-card: #1f242c;
+  --fe-ppage-ground-1: #0E0E0D;
+  --fe-ppage-ground-2: #141413;
+  --fe-ppage-card: #181817;
   --fe-ppage-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
   --fe-ppage-ok: #22c55e;
 }
 @media (prefers-color-scheme: dark) {
   .fe.fe-ppage:not(.fe--theme-light) {
-    --fe-ppage-ground-1: #12151a;
-    --fe-ppage-ground-2: #191e25;
-    --fe-ppage-card: #1f242c;
+    --fe-ppage-ground-1: #0E0E0D;
+    --fe-ppage-ground-2: #141413;
+    --fe-ppage-card: #181817;
     --fe-ppage-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
     --fe-ppage-ok: #22c55e;
   }
@@ -350,3 +337,87 @@
   --fe-login-ground: var(--fe-bg-elev);
   --fe-login-card: var(--fe-bg);
 }
+
+/* === AIFS Luxury Gold Design Tokens & Gallery Helpers ====================
+ * Imported from AIFS frontend/src/app/globals.css
+ */
+:root {
+  --fe-aifs-primary: #FFC629;
+  --fe-aifs-primary-hover: #F2B91B;
+  --fe-aifs-primary-soft: #FFF2CC;
+  --fe-aifs-bg: #FFFDF8;
+  --fe-aifs-surface: #FFFFFF;
+  --fe-aifs-foreground: #171717;
+  --fe-aifs-border: #E8E5DE;
+  --fe-aifs-muted: #686868;
+}
+
+.dark,
+:root[data-theme='dark'] {
+  --fe-aifs-primary: #FFC629;
+  --fe-aifs-primary-hover: #F2B91B;
+  --fe-aifs-primary-soft: #382E0B;
+  --fe-aifs-bg: #0E0E0D;
+  --fe-aifs-surface: #181817;
+  --fe-aifs-foreground: #F5F5F4;
+  --fe-aifs-border: #292927;
+  --fe-aifs-muted: #A3A3A0;
+}
+
+/* Luxury Gallery heart shadow for contrast on any image tone */
+.photo-heart-shadow {
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.8)) drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+}
+
+.heart-interactive {
+  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+.heart-interactive:hover {
+  transform: scale(1.15);
+}
+.heart-interactive:active {
+  transform: scale(0.92);
+}
+
+@keyframes fadeInLightbox {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.lightbox-animate {
+  animation: fadeInLightbox 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Subtle Face Scan Line */
+@keyframes subtleScan {
+  0% {
+    top: 6%;
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.75;
+  }
+  80% {
+    opacity: 0.75;
+  }
+  100% {
+    top: 94%;
+    opacity: 0;
+  }
+}
+
+.face-scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #FFC629 50%, transparent);
+  animation: subtleScan 3.5s ease-in-out infinite;
+}
+

@@ -111,6 +111,7 @@ type CreateOpts struct {
 	// output lands. Refused unless it has the shape every token has, so a
 	// caller cannot choose a guessable one.
 	Token string
+	AIFSEnabled bool
 }
 
 // NewToken mints a share token in the shape every link carries: 32 lowercase
@@ -242,8 +243,57 @@ func (s *Service) Create(ctx context.Context, opts CreateOpts) (*model.Share, er
 		FilesJSON:    opts.FilesJSON,
 		PurposeJSON:  opts.PurposeJSON,
 		AppRoot:      opts.AppRoot,
+		AIFSEnabled:  opts.AIFSEnabled,
 	}
 	return s.store.CreateShare(ctx, sh)
+}
+
+// Update updates an existing share in place (overwriting settings while preserving ID and token).
+func (s *Service) Update(ctx context.Context, id int64, opts CreateOpts) (*model.Share, error) {
+	sh, err := s.store.GetShareByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if opts.PIN != "" {
+		if err := CheckPINLength(opts.PIN); err != nil {
+			return nil, err
+		}
+		h, err := bcrypt.GenerateFromPassword([]byte(opts.PIN), bcrypt.DefaultCost)
+		if err != nil {
+			return nil, err
+		}
+		sh.PinHash = string(h)
+		if s.box.Enabled() {
+			sealed, err := s.box.Seal(opts.PIN)
+			if err != nil {
+				return nil, err
+			}
+			sh.PinEnc = sealed
+		}
+	}
+	if opts.ExpiresAt != nil {
+		opts.ExpiresAt, _ = ClampExpiry(opts.ExpiresAt, s.MaxTTLDays(ctx), time.Now())
+		sh.ExpiresAt = opts.ExpiresAt
+	}
+	if opts.MaxDownloads != nil {
+		sh.MaxDownloads = opts.MaxDownloads
+	}
+	if opts.Kind != "" {
+		sh.Kind = opts.Kind
+	}
+	if opts.MaxUploads != nil {
+		sh.MaxUploads = opts.MaxUploads
+	}
+	if opts.DropSettings != nil {
+		sh.DropSettings = opts.DropSettings
+	}
+	sh.AIFSEnabled = opts.AIFSEnabled
+	if err := s.store.UpdateShare(ctx, sh); err != nil {
+		return nil, err
+	}
+	sh.HasPin = sh.PinHash != ""
+	sh.PinRecoverable = sh.PinEnc != ""
+	return sh, nil
 }
 
 // Resolve looks up a share by token and applies expiry/PIN checks.

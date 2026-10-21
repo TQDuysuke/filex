@@ -599,6 +599,7 @@ type Store interface {
 
 	// Shares
 	CreateShare(ctx context.Context, share *model.Share) (*model.Share, error)
+	UpdateShare(ctx context.Context, share *model.Share) error
 	GetShareByID(ctx context.Context, id int64) (*model.Share, error)
 	GetShareByToken(ctx context.Context, token string) (*model.Share, error)
 	ListSharesByNode(ctx context.Context, nodeID int64) ([]*model.Share, error)

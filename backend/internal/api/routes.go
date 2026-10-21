@@ -1367,6 +1367,7 @@ func BuildRouter(d *Deps) http.Handler {
 			watch.Resolver = d.Versions.Resolver
 		}
 		writehook.ConfigureAfterWrite(watch.OnWritten)
+		writehook.RegisterAfterWrite(aifsH.OnWritten)
 	}
 	wsTickets := realtime.NewTicketStore()
 	wsh := handlers.NewWS(d.Store, d.ACL, hub, wsTickets, d.Cfg.PublicURL)

@@ -104,7 +104,7 @@ const rows = computed(() =>
     name: th.name,
     id: `custom:${th.key}`,
     isDefault: `custom:${th.key}` === defaultThemeId.value,
-    swatch: th.light?.['--fe-primary'] ?? '#2f6ceb',
+    swatch: th.light?.['--fe-primary'] ?? '#FFC629',
   })),
 );
 
