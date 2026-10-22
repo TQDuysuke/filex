@@ -80,6 +80,8 @@ config.local.yaml
 *.db-wal
 /data/
 /storage-data/
+/backup/
+/backups/
 
 # --- OS ---
 .DS_Store
