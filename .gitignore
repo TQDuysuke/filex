@@ -29,7 +29,6 @@
 /docs-site/.vitepress/dist/
 /docs-site/.vitepress/cache/
 /docs-site-dist.zip
-/storage-local
 # --- Go ---
 *.exe
 *.dll
@@ -80,6 +79,7 @@ config.local.yaml
 *.db-wal
 /data/
 /storage-data/
+/storage-local/
 /backup/
 /backups/
 
