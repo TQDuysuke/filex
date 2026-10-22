@@ -29,7 +29,7 @@
 /docs-site/.vitepress/dist/
 /docs-site/.vitepress/cache/
 /docs-site-dist.zip
-
+/storage-local
 # --- Go ---
 *.exe
 *.dll

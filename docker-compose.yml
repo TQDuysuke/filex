@@ -29,6 +29,10 @@ services:
     restart: unless-stopped
     ports:
       - "${FILEX_PORT:-5212}:5212"
+    depends_on:
+      onlyoffice:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c", "while true; do nc -lk -p 8099 -e nc onlyoffice 80; sleep 0.5; done & exec /sbin/tini -s -- /usr/local/bin/docker-entrypoint.sh serve"]
     volumes:
       - ./data:/data
       - ./storage-local:/var/lib/filex/local-storage
@@ -66,17 +70,17 @@ services:
 
       # --- Timezone & Mail ---
       TZ: ${TZ:-Asia/Ho_Chi_Minh}
-      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_SECURE: ${SMTP_SECURE:-"false"}
-      SMTP_USER: ${SMTP_USER:-tranduyworkspace@gmail.com}
-      SMTP_PASS: ${SMTP_PASS:-"gmgv bnbz ucus jmpt"}
-      FILEX_SMTP_HOST: ${FILEX_SMTP_HOST:-smtp.gmail.com}
-      FILEX_SMTP_PORT: ${FILEX_SMTP_PORT:-587}
-      FILEX_SMTP_USERNAME: ${FILEX_SMTP_USERNAME:-tranduyworkspace@gmail.com}
-      FILEX_SMTP_PASSWORD: ${FILEX_SMTP_PASSWORD:-"gmgv bnbz ucus jmpt"}
-      FILEX_SMTP_FROM: ${FILEX_SMTP_FROM:-tranduyworkspace@gmail.com}
-      FILEX_SMTP_TLS: ${FILEX_SMTP_TLS:-starttls}
+      FILEX_SMTP_HOST: ${FILEX_SMTP_HOST:-}
+      FILEX_SMTP_PORT: ${FILEX_SMTP_PORT:-}
+      FILEX_SMTP_USERNAME: ${FILEX_SMTP_USERNAME:-}
+      FILEX_SMTP_PASSWORD: ${FILEX_SMTP_PASSWORD:-}
+      FILEX_SMTP_FROM: ${FILEX_SMTP_FROM:-}
+      FILEX_SMTP_TLS: ${FILEX_SMTP_TLS:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
 
       # --- Plug & play services (URL = enabled) ---
       # An ONLYOFFICE Document Server is optional (the Office editor app
@@ -177,10 +181,10 @@ services:
       - onlyoffice-fonts:/usr/share/fonts/truetype/custom
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/healthcheck"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
     networks:
       - filex-net
 
@@ -195,7 +199,7 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-filex}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-filex}
       POSTGRES_DB: ${POSTGRES_DB:-filex}
     volumes:
       - postgres-data:/var/lib/postgresql/data
