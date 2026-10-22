@@ -2306,6 +2306,7 @@ export const en: Record<string, string> = {
   'access.ui.never': 'Never',
   'access.ui.days': '{days} days',
   'access.ui.days_one': '{days} day',
+  'access.ui.custom_date': 'Specific date & time...',
   'access.ui.unlimited': 'Unlimited',
   'access.ui.downloads': '{count} downloads',
   'access.ui.downloads_one': '{count} download',

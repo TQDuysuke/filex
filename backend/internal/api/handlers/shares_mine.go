@@ -261,6 +261,65 @@ func (h *SharesMine) reveal(sh *model.Share) (string, error) {
 	return h.Service.RevealPIN(sh)
 }
 
+// Delete hard-deletes a share the caller OWNS, removing the row from the
+// database entirely.
+//
+// This is the user-scoped mirror of SharesAdmin.Delete (`DELETE
+// /api/admin/shares/{id}`). An administrator's action does not need a second
+// route; this one is for the share's OWNER, who wants to clean their list
+// after a link is no longer needed and does not want it in the audit trail.
+//
+// ⚠ Ownership is checked with the same flow Pin uses — GetShareByID, then
+// tenant confinement, then root confinement, then owner-or-admin. The
+// multi-tenant and root-confine checks are the harder ones (the bug
+// ownsShare documents: a share id is a small integer, so the row you could
+// not see was still one you could destroy).
+func (h *SharesMine) Delete(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "bad id"})
+		return
+	}
+	user := auth.UserFrom(r.Context())
+	if user == nil {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	sh, err := h.Store.GetShareByID(r.Context(), id)
+	if err != nil || sh == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+		return
+	}
+	// ⚠⚠ Tenant boundary: same check as Pin — an admin does NOT skip it.
+	if scope, confined := confinedScope(r.Context()); confined {
+		n, nerr := h.Store.GetNode(r.Context(), sh.NodeID)
+		if nerr != nil || n == nil || !scope.CanAccessStorage(n.StorageID) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+	}
+	if _, confined := confine.RootFrom(r.Context()); confined {
+		n, nerr := h.Store.GetNode(r.Context(), sh.NodeID)
+		if nerr != nil || n == nil || !rootAllows(r.Context(), h.Store, n.StorageID, n.Path) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+			return
+		}
+	}
+	owner := sh.CreatedBy != nil && *sh.CreatedBy == user.ID
+	if !owner && !user.IsAdmin() {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+	// Read BEFORE the delete: after the row is gone there is no share to say
+	// which app, if any, opened this link.
+	if err := h.Store.DeleteShare(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	appLinkEnded(r.Context(), h.Apps, sh, "deleted")
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 // auditReveal writes the trail row for one PIN read.
 //
 // ⚠ Neither the PIN nor the share TOKEN is in it. The PIN for the obvious

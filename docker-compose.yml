@@ -22,6 +22,9 @@ services:
   # ---------------------------------------------------------------------
   filex:
     image: ${FILEX_IMAGE:-ghcr.io/brf-tech/filex:slim}
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.slim
     container_name: filex
     restart: unless-stopped
     ports:
@@ -32,6 +35,7 @@ services:
     environment:
       FILEX_PUBLIC_URL: ${FILEX_PUBLIC_URL:-http://localhost:5212}
       FILEX_LISTEN: 0.0.0.0:5212
+      FILEX_SHARE_MAX_TTL: ${FILEX_SHARE_MAX_TTL:-0}
 
       # --- Auth ---
       FILEX_AUTH_DRIVERS: ${FILEX_AUTH_DRIVERS:-local}
@@ -60,10 +64,25 @@ services:
       FILEX_DEFAULT_STORAGE_DRIVER: ${FILEX_DEFAULT_STORAGE_DRIVER:-local}
       FILEX_DEFAULT_STORAGE_PATH: ${FILEX_DEFAULT_STORAGE_PATH:-/var/lib/filex/local-storage}
 
+      # --- Timezone & Mail ---
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-"false"}
+      SMTP_USER: ${SMTP_USER:-tranduyworkspace@gmail.com}
+      SMTP_PASS: ${SMTP_PASS:-"gmgv bnbz ucus jmpt"}
+      FILEX_SMTP_HOST: ${FILEX_SMTP_HOST:-smtp.gmail.com}
+      FILEX_SMTP_PORT: ${FILEX_SMTP_PORT:-587}
+      FILEX_SMTP_USERNAME: ${FILEX_SMTP_USERNAME:-tranduyworkspace@gmail.com}
+      FILEX_SMTP_PASSWORD: ${FILEX_SMTP_PASSWORD:-"gmgv bnbz ucus jmpt"}
+      FILEX_SMTP_FROM: ${FILEX_SMTP_FROM:-tranduyworkspace@gmail.com}
+      FILEX_SMTP_TLS: ${FILEX_SMTP_TLS:-starttls}
+
       # --- Plug & play services (URL = enabled) ---
       # An ONLYOFFICE Document Server is optional (the Office editor app
       # needs none): blank = not connected.
-      FILEX_ONLYOFFICE_URL: ${FILEX_ONLYOFFICE_URL:-}
+      FILEX_ONLYOFFICE_URL: ${FILEX_ONLYOFFICE_URL:-http://localhost:8099}
+      FILEX_ONLYOFFICE_CALLBACK_URL: ${FILEX_ONLYOFFICE_CALLBACK_URL:-http://filex:5212}
       FILEX_ONLYOFFICE_JWT: ${FILEX_ONLYOFFICE_JWT:-}
       FILEX_DRAWIO_URL: ${FILEX_DRAWIO_URL:-}
 
@@ -140,7 +159,6 @@ services:
   # ONLYOFFICE_IMAGE in .env picks another one on purpose.
   # ---------------------------------------------------------------------
   onlyoffice:
-    profiles: ["onlyoffice"]
     image: ${ONLYOFFICE_IMAGE:-onlyoffice/documentserver:9.4.0.1}
     container_name: filex-onlyoffice
     restart: unless-stopped
@@ -148,9 +166,10 @@ services:
       - "${ONLYOFFICE_PORT:-8099}:80"
     environment:
       JWT_ENABLED: "true"
-      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:?set ONLYOFFICE_JWT_SECRET in .env}
-      JWT_HEADER: AuthorizationJwt
-      USE_UNAUTHORIZED_STORAGE: "false"
+      JWT_SECRET: ${ONLYOFFICE_JWT_SECRET:-c3e981329bf02f831da902b7405f6e9b119a9d7f02381e4b9a8cf05b1c7d24a6}
+      JWT_HEADER: Authorization
+      USE_UNAUTHORIZED_STORAGE: "true"
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
     volumes:
       - onlyoffice-data:/var/www/onlyoffice/Data
       - onlyoffice-logs:/var/log/onlyoffice

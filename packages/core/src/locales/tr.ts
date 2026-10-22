@@ -2271,6 +2271,7 @@ export const tr: Record<string, string> = {
   'access.ui.never': 'Süresiz',
   'access.ui.days': '{days} gün',
   'access.ui.days_one': '{days} gün',
+  'access.ui.custom_date': 'Belirli tarih ve saat...',
   'access.ui.unlimited': 'Sınırsız',
   'access.ui.downloads': '{count} indirme',
   'access.ui.downloads_one': '{count} indirme',

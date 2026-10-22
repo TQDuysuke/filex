@@ -36,7 +36,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useRouter } from 'vue-router';
-import { ArrowLeft, Link2, Lock, RefreshCcw } from 'lucide-vue-next';
+import { ArrowLeft, Link2, Lock, RefreshCcw, Trash2 } from 'lucide-vue-next';
 
 import { MySharesApi, type MyShareRow, type PinUnavailable } from '@/api/myShares';
 import type { PaginatedResponse, Share, ShareState } from '@/api/types';
@@ -60,6 +60,7 @@ const loading = ref(false);
 const page = ref(1);
 const pageSize = 25;
 const confirmRevoke = ref<MyShareRow | null>(null);
+const confirmDelete = ref<MyShareRow | null>(null);
 const busyId = ref<number | null>(null);
 
 /**
@@ -194,6 +195,23 @@ async function revoke() {
   }
 }
 
+async function hardDelete() {
+  const row = confirmDelete.value;
+  const id = row ? shareOf(row).id : 0;
+  if (!id) return;
+  busyId.value = id;
+  try {
+    await MySharesApi.hardDelete(id);
+    toast.success(t('myShares.deletedOk'));
+    confirmDelete.value = null;
+    await load();
+  } catch (e: unknown) {
+    toast.error(extractError(e, t('errors.generic')));
+  } finally {
+    busyId.value = null;
+  }
+}
+
 /**
  * The row's verbs.
  *
@@ -224,6 +242,13 @@ function rowActions(row: MyShareRow): ContextAction[] {
       hidden: !isLive(row),
       disabled: busy,
     },
+    {
+      key: 'delete',
+      label: t('myShares.delete'),
+      icon: 'delete',
+      danger: true,
+      disabled: busy,
+    },
   ];
 }
 
@@ -231,6 +256,7 @@ function onRowAction(key: string, row: MyShareRow) {
   if (key === 'copy-link') void copyLink(row);
   else if (key === 'copy-pin') void copyPin(row);
   else if (key === 'revoke') confirmRevoke.value = row;
+  else if (key === 'delete') confirmDelete.value = row;
 }
 
 /* ⚠ The list is paged by the SERVER, which has no sort parameter: while it
@@ -435,6 +461,34 @@ onMounted(load);
           @click="revoke"
         >
           {{ t('myShares.revokeDo') }}
+        </Button>
+      </template>
+    </Modal>
+
+    <!--
+      Hard-delete confirmation: permanently removes the link record from the
+      database. Unlike revoke (which keeps the row for the audit trail), this
+      wipes it entirely — the person should know that before they proceed.
+    -->
+    <Modal
+      :model-value="confirmDelete !== null"
+      :title="t('myShares.deleteTitle')"
+      size="sm"
+      @update:model-value="(v) => (v ? null : (confirmDelete = null))"
+    >
+      <div class="flex items-start gap-3">
+        <Trash2 class="mt-0.5 h-5 w-5 shrink-0 text-rose-500" aria-hidden="true" />
+        <p class="text-sm" data-testid="my-share-delete-warning">{{ t('myShares.deleteConfirm') }}</p>
+      </div>
+      <template #footer>
+        <Button variant="ghost" data-testid="my-share-delete-dismiss" @click="confirmDelete = null">{{ t('common.dismiss') }}</Button>
+        <Button
+          variant="danger"
+          data-testid="my-share-delete-confirm"
+          :loading="busyId !== null"
+          @click="hardDelete"
+        >
+          {{ t('myShares.deleteDo') }}
         </Button>
       </template>
     </Modal>

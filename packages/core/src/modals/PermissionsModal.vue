@@ -34,6 +34,7 @@ import {
   STOCK_EXPIRY_DAYS,
   clampExpiryOptions,
   defaultExpiryDays,
+  expiryInputMax,
   shareDetailLine,
   ttlCeilingHint,
   validUntilLine,
@@ -271,20 +272,43 @@ const dropShares = computed(() => shares.value.filter((s) => shareKind(s) === 'd
 // ⚠ Derived from the server's ceiling, never a fixed list: offering "30 days"
 // on a server that keeps links for 7 would show a choice that is not one.
 // The same helper drives every surface (see lib/shareTtl.ts).
-function expiryLabel(days: number): string {
+const customExpiryDate = ref<string>('');
+const customDropExpiryDate = ref<string>('');
+
+function expiryLabel(days: number, customDate?: string): string {
+  if (days === -1) {
+    if (customDate) {
+      const d = new Date(customDate);
+      if (!Number.isNaN(d.getTime())) {
+        return d.toLocaleDateString(localeCode.value, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      }
+    }
+    return t('access.ui.custom_date');
+  }
   return days === 0 ? t('access.ui.never') : t('access.ui.days', { days });
 }
-const expiryOptions = computed(() => clampExpiryOptions(STOCK_EXPIRY_DAYS, props.shareMaxTtlDays, expiryLabel));
+const expiryOptions = computed(() => {
+  const opts = clampExpiryOptions(STOCK_EXPIRY_DAYS, props.shareMaxTtlDays, (d) => expiryLabel(d));
+  opts.push({ v: -1, l: t('access.ui.custom_date') });
+  return opts;
+});
 const expiryChoices = computed<SelectOption[]>(() => expiryOptions.value.map((o) => ({ value: o.v, label: o.l })));
 const ttlHint = computed(() => ttlCeilingHint(props.shareMaxTtlDays, localeCode.value));
+const maxExpiryDate = computed(() => expiryInputMax(props.shareMaxTtlDays));
+const minExpiryDate = computed(() => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() + 5);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
+});
 watch(
   () => props.shareMaxTtlDays,
   () => {
     // The ceiling can arrive after mount (capabilities load async): snap a
     // selection the server would not honour back to what it will.
     const allowed = expiryOptions.value.map((o) => o.v);
-    if (!allowed.includes(shareExpiry.value)) shareExpiry.value = defaultExpiryDays(props.shareMaxTtlDays);
-    if (!allowed.includes(dropExpiry.value)) dropExpiry.value = defaultExpiryDays(props.shareMaxTtlDays);
+    if (!allowed.includes(shareExpiry.value) && shareExpiry.value !== -1) shareExpiry.value = defaultExpiryDays(props.shareMaxTtlDays);
+    if (!allowed.includes(dropExpiry.value) && dropExpiry.value !== -1) dropExpiry.value = defaultExpiryDays(props.shareMaxTtlDays);
   },
 );
 
@@ -646,14 +670,23 @@ async function createLink() {
   try {
     for (const s of downloadShares.value) await props.api.revokeShare(s.uuid);
     shareResult.value = null;
-    const r = await props.api.createShare({
+    const payload: {
+      path: string;
+      password?: boolean;
+      expires_in?: number | null;
+      expires_at?: string | null;
+      max_downloads?: number | null;
+    } = {
       path: props.path,
       password: sharePwd.value,
-      expires_in: expiresInSeconds(shareExpiry.value),
-      // null, not 0 — the server reads 0 as "no cap given" either way, but a
-      // null says it explicitly and keeps the payload honest.
       max_downloads: shareMaxDl.value || null,
-    });
+    };
+    if (shareExpiry.value === -1 && customExpiryDate.value) {
+      payload.expires_at = new Date(customExpiryDate.value).toISOString();
+    } else {
+      payload.expires_in = expiresInSeconds(shareExpiry.value);
+    }
+    const r = await props.api.createShare(payload);
     shareResult.value = {
       // The create answer's `uuid` IS the token (share.go shareCreateRespInner).
       token: r.share.token ?? r.share.uuid,
@@ -759,13 +792,25 @@ async function createDropLink() {
     if (dropMaxSizeMB.value) drop_settings.max_file_size_mb = Number(dropMaxSizeMB.value);
     const exts = splitList(dropAllowedExt.value, { spaces: true }).map((s) => s.replace(/^\./, '')).filter(Boolean);
     if (exts.length) drop_settings.allowed_ext = exts;
-    const r = await props.api.createShare({
+    const payload: {
+      path: string;
+      kind: string;
+      password?: boolean;
+      expires_in?: number | null;
+      expires_at?: string | null;
+      drop_settings?: Record<string, unknown> | null;
+    } = {
       path: props.path,
       kind: 'drop',
       password: dropPwd.value,
-      expires_in: expiresInSeconds(dropExpiry.value),
       drop_settings,
-    });
+    };
+    if (dropExpiry.value === -1 && customDropExpiryDate.value) {
+      payload.expires_at = new Date(customDropExpiryDate.value).toISOString();
+    } else {
+      payload.expires_in = expiresInSeconds(dropExpiry.value);
+    }
+    const r = await props.api.createShare(payload);
     dropResult.value = {
       token: r.share.token ?? r.share.uuid,
       url: r.share.url,
@@ -906,7 +951,7 @@ const linkDetail = computed(() => {
 const linkSummary = computed(() => {
   const bits: string[] = [];
   bits.push(sharePwd.value ? t('access.sum.pin_on') : t('access.sum.pin_off'));
-  bits.push(expiryLabel(shareExpiry.value));
+  bits.push(expiryLabel(shareExpiry.value, customExpiryDate.value));
   if (shareMaxDl.value) bits.push(maxDlOptions.value.find((o) => o.v === shareMaxDl.value)?.l ?? '');
   return bits.filter(Boolean).join(' · ');
 });
@@ -1037,6 +1082,17 @@ async function nativeShare(body: SheetWords | null) {
                     :options="expiryChoices"
                     testid="share-expiry"
                     @update:model-value="(v) => (shareExpiry = Number(v))"
+                  />
+                </label>
+                <label v-if="shareExpiry === -1" class="fe-share__field">
+                  <span class="fe-share__fieldlabel">{{ t('access.ui.custom_date') }}</span>
+                  <input
+                    v-model="customExpiryDate"
+                    type="datetime-local"
+                    class="fe-share__input"
+                    :min="minExpiryDate"
+                    :max="maxExpiryDate"
+                    data-testid="share-custom-expiry"
                   />
                 </label>
                 <label class="fe-share__field">
@@ -1327,6 +1383,17 @@ async function nativeShare(body: SheetWords | null) {
                     :options="expiryChoices"
                     testid="drop-expiry"
                     @update:model-value="(v) => (dropExpiry = Number(v))"
+                  />
+                </label>
+                <label v-if="dropExpiry === -1" class="fe-share__field">
+                  <span class="fe-share__fieldlabel">{{ t('access.ui.custom_date') }}</span>
+                  <input
+                    v-model="customDropExpiryDate"
+                    type="datetime-local"
+                    class="fe-share__input"
+                    :min="minExpiryDate"
+                    :max="maxExpiryDate"
+                    data-testid="drop-custom-expiry"
                   />
                 </label>
               </div>

@@ -1604,6 +1604,8 @@ func BuildRouter(d *Deps) http.Handler {
 			// above, which carries no secret. The owner's words were about two
 			// people, not two machines: *"paylaşımın sahibi ve admin"*.
 			r.With(handlers.RequirePersonalCaller).Get("/{id}/pin", sharesMineH.Pin)
+			// Hard-delete a link owned by the caller (or admin), removing the row entirely.
+			r.Delete("/{id}", sharesMineH.Delete)
 		})
 
 		// ────── the embedded store screen (#162) ──────

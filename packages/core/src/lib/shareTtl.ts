@@ -32,7 +32,7 @@ export interface ExpiryOption {
 }
 
 /** The stock expiry choices before the ceiling is applied (days; 0 = never). */
-export const STOCK_EXPIRY_DAYS = [0, 1, 7, 30];
+export const STOCK_EXPIRY_DAYS = [0, 1, 3, 7, 14, 30, 60, 90, 180, 365];
 
 /**
  * clampExpiryOptions returns the options a dialog may show under a ceiling

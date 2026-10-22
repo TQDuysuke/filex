@@ -1965,21 +1965,48 @@ func applyEnv(c *Config) {
 	}
 	if v := os.Getenv("FILEX_SMTP_HOST"); v != "" {
 		c.Seed.SMTP.Host = v
+	} else if v := os.Getenv("SMTP_HOST"); v != "" {
+		c.Seed.SMTP.Host = v
 	}
 	if v := os.Getenv("FILEX_SMTP_PORT"); v != "" {
+		c.Seed.SMTP.Port = v
+	} else if v := os.Getenv("SMTP_PORT"); v != "" {
 		c.Seed.SMTP.Port = v
 	}
 	if v := os.Getenv("FILEX_SMTP_USERNAME"); v != "" {
 		c.Seed.SMTP.Username = v
+	} else if v := os.Getenv("FILEX_SMTP_USER"); v != "" {
+		c.Seed.SMTP.Username = v
+	} else if v := os.Getenv("SMTP_USER"); v != "" {
+		c.Seed.SMTP.Username = v
+	} else if v := os.Getenv("SMTP_USERNAME"); v != "" {
+		c.Seed.SMTP.Username = v
 	}
 	if v := os.Getenv("FILEX_SMTP_PASSWORD"); v != "" {
+		c.Seed.SMTP.Password = v
+	} else if v := os.Getenv("FILEX_SMTP_PASS"); v != "" {
+		c.Seed.SMTP.Password = v
+	} else if v := os.Getenv("SMTP_PASS"); v != "" {
+		c.Seed.SMTP.Password = v
+	} else if v := os.Getenv("SMTP_PASSWORD"); v != "" {
 		c.Seed.SMTP.Password = v
 	}
 	if v := os.Getenv("FILEX_SMTP_FROM"); v != "" {
 		c.Seed.SMTP.From = v
+	} else if v := os.Getenv("SMTP_FROM"); v != "" {
+		c.Seed.SMTP.From = v
 	}
 	if v := os.Getenv("FILEX_SMTP_TLS"); v != "" {
 		c.Seed.SMTP.TLS = v
+	} else if v := os.Getenv("SMTP_SECURE"); v != "" {
+		if v == "true" || v == "1" {
+			c.Seed.SMTP.TLS = "tls"
+		} else {
+			c.Seed.SMTP.TLS = "starttls"
+		}
+	}
+	if c.Seed.SMTP.From == "" && c.Seed.SMTP.Username != "" {
+		c.Seed.SMTP.From = c.Seed.SMTP.Username
 	}
 	if v := os.Getenv("FILEX_DEFAULT_STORAGE_DRIVER"); v != "" {
 		c.Seed.Storage.Driver = v

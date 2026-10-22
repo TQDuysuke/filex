@@ -57,7 +57,7 @@ func New(store db.Store) *Service { return &Service{store: store} }
 // Load reads the current SMTP config from settings.
 func (s *Service) Load(ctx context.Context) Config {
 	get := func(k string) string { v, _ := s.store.GetSetting(ctx, k); return strings.TrimSpace(v) }
-	return Config{
+	cfg := Config{
 		Host:     get(KeyHost),
 		Port:     get(KeyPort),
 		Username: get(KeyUser),
@@ -65,6 +65,10 @@ func (s *Service) Load(ctx context.Context) Config {
 		From:     get(KeyFrom),
 		TLS:      strings.ToLower(get(KeyTLS)),
 	}
+	if cfg.From == "" && cfg.Username != "" {
+		cfg.From = cfg.Username
+	}
+	return cfg
 }
 
 // Verified reports whether the last verification succeeded.

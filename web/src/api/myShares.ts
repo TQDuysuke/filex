@@ -105,4 +105,15 @@ export const MySharesApi = {
   async revoke(id: number): Promise<void> {
     await api.delete(`/files/share/${id}`);
   },
+
+  /**
+   * Hard-delete — removes the row entirely from the database.
+   *
+   * Unlike `revoke` (which soft-revokes and keeps the audit trail), this
+   * permanently erases the link record. Available to the link's owner via
+   * DELETE /api/shares/{id} (shares_mine.go).
+   */
+  async hardDelete(id: number): Promise<void> {
+    await api.delete(`/shares/${id}`);
+  },
 };

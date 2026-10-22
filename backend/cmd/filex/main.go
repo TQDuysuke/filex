@@ -22,6 +22,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -47,6 +49,27 @@ import (
 	_ "github.com/brf-tech/filex/backend/internal/db/drivers/postgres"
 	_ "github.com/brf-tech/filex/backend/internal/db/drivers/sqlite"
 )
+
+func init() {
+	if tr, ok := http.DefaultTransport.(*http.Transport); ok {
+		origDial := tr.DialContext
+		if origDial == nil {
+			var defaultDialer net.Dialer
+			origDial = defaultDialer.DialContext
+		}
+		tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			conn, err := origDial(ctx, network, addr)
+			if err != nil && (strings.HasPrefix(addr, "localhost:") || strings.HasPrefix(addr, "127.0.0.1:") || strings.HasPrefix(addr, "[::1]:")) {
+				if strings.HasSuffix(addr, ":8099") {
+					if c2, err2 := origDial(ctx, network, "onlyoffice:80"); err2 == nil {
+						return c2, nil
+					}
+				}
+			}
+			return conn, err
+		}
+	}
+}
 
 var configPath string
 
