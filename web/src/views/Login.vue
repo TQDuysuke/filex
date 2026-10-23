@@ -8,11 +8,6 @@ import {
   Mail,
   Github,
   Sparkles,
-  HardDrive,
-  Search,
-  Share2,
-  MonitorSmartphone,
-  Blocks,
   ArrowRight,
   KeyRound,
   Eye,
@@ -342,124 +337,76 @@ function startOidc(c?: LoginSSO) {
          all now (`lib/prefs` → SESSION_LS_KEY): the browser decides light or
          dark, and the INSTANCE decides the palette.
          The only place either one is chosen is the user-settings panel. -->
-    <!-- ─────────── Demo mode landing ─────────── -->
-    <div v-if="demoMode" class="mx-auto max-w-5xl px-4 py-10 sm:py-16">
-      <div class="text-center">
-        <LogoMark class="mx-auto h-14 w-14" />
-        <div class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-brand-50 dark:bg-brand-500/10 px-3 py-1 text-xs font-medium text-brand-700 dark:text-brand-300">
-          <Sparkles class="h-3.5 w-3.5" />
+    <!-- ─────────── Demo mode landing (minimalist) ─────────── -->
+    <div v-if="demoMode" class="mx-auto max-w-md px-4 py-12 sm:py-20">
+      <div class="card p-6 sm:p-8 text-center shadow-lg border border-zinc-200/80 dark:border-zinc-800/80 bg-white dark:bg-zinc-900 rounded-2xl">
+        <LogoMark class="mx-auto h-12 w-12" />
+        <div class="mt-3 inline-flex items-center gap-1.5 rounded-full bg-brand-50 dark:bg-brand-500/10 px-2.5 py-0.5 text-xs font-medium text-brand-700 dark:text-brand-300">
+          <Sparkles class="h-3 w-3" />
           {{ t('demo.badge') }}
         </div>
-        <h1 class="mt-4 text-3xl sm:text-4xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+        <h1 class="mt-3 text-2xl font-bold tracking-tight text-zinc-900 dark:text-zinc-100">
           {{ t('demo.title') }}
         </h1>
-        <p class="mt-3 max-w-2xl mx-auto text-sm text-zinc-600 dark:text-zinc-400">
+        <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400">
           {{ t('demo.subtitle') }}
         </p>
 
-        <div class="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-          <Button size="lg" variant="primary" @click="openDemo" :loading="auth.loading">
+        <div class="mt-6 flex flex-col gap-2.5">
+          <Button size="md" variant="primary" @click="openDemo" :loading="auth.loading" class="w-full justify-center">
             <Sparkles class="h-4 w-4" />
             {{ t('demo.openCta') }}
             <ArrowRight class="h-4 w-4" />
           </Button>
           <button
             type="button"
-            class="text-sm text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 underline-offset-2 hover:underline"
+            class="text-xs text-zinc-500 hover:text-zinc-800 dark:text-zinc-400 dark:hover:text-zinc-200 transition-colors py-1"
             @click="showSignIn = !showSignIn"
           >
             {{ showSignIn ? t('demo.hideSignIn') : t('demo.showSignIn') }}
           </button>
         </div>
-        <p class="mt-2 text-xs text-zinc-500 dark:text-zinc-500">
+
+        <p class="mt-3 text-[11px] text-zinc-400 dark:text-zinc-500">
           {{ t('demo.creds', { email: demoUser, password: demoPass }) }}
         </p>
-        <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-500">
-          {{ t('demo.sandbox') }}
-        </p>
-      </div>
 
-      <!-- Feature highlight grid. Six cards is a shop window, not an inventory:
-           the areas that do not fit are named in the "and also" line under the
-           grid rather than dropped, because a visitor who cannot see a feature
-           listed assumes it does not exist. Keep both in step with the root
-           README - this page is one of the surfaces the release documentation
-           audit covers (docs/CONTRIBUTING.md, Release process step 3). -->
-      <div class="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-          <HardDrive class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h3 class="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{{ t('demo.features.storageTitle') }}</h3>
-          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{{ t('demo.features.storageBody') }}</p>
-        </div>
-        <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-          <Search class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h3 class="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{{ t('demo.features.searchTitle') }}</h3>
-          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{{ t('demo.features.searchBody') }}</p>
-        </div>
-        <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-          <Share2 class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h3 class="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{{ t('demo.features.shareTitle') }}</h3>
-          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{{ t('demo.features.shareBody') }}</p>
-        </div>
-        <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-          <MonitorSmartphone class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h3 class="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{{ t('demo.features.desktopTitle') }}</h3>
-          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{{ t('demo.features.desktopBody') }}</p>
-        </div>
-        <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-          <Blocks class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h3 class="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{{ t('demo.features.embedTitle') }}</h3>
-          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">{{ t('demo.features.embedBody') }}</p>
-        </div>
-        <div class="rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5">
-          <Github class="h-6 w-6 text-brand-600 dark:text-brand-400" />
-          <h3 class="mt-2 font-semibold text-zinc-900 dark:text-zinc-100">{{ t('demo.features.openTitle') }}</h3>
-          <p class="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {{ t('demo.features.openBody') }}
-            <a class="text-brand-600 dark:text-brand-400 hover:underline" href="https://github.com/BRF-Tech/filex" target="_blank" rel="noopener">github.com/BRF-Tech/filex</a>
-          </p>
-        </div>
-      </div>
-
-      <p class="mt-6 text-center text-xs leading-relaxed text-zinc-500 dark:text-zinc-500">
-        {{ t('demo.alsoIncluded') }}
-      </p>
-
-      <!-- Optional sign-in form (hidden behind toggle) -->
-      <div v-if="showSignIn" class="mx-auto mt-10 w-full max-w-md card p-6">
-        <div class="flex flex-col items-center gap-2 mb-4">
-          <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">{{ t('login.title') }}</h2>
-          <p class="text-xs text-zinc-500 dark:text-zinc-400">{{ t('demo.adminHint') }}</p>
-        </div>
-        <form v-if="localEnabled" class="space-y-3" @submit.prevent="submit">
-          <Input
-            v-if="realmEnabled"
-            v-model="realm"
-            type="text"
-            autocomplete="organization"
-            :readonly="realmLocked"
-            :label="t('login.realm')"
-            :hint="realmLocked ? t('login.realmLocked', { realm: lockedRealm }) : t('login.realmHint')"
-            name="realm"
-          />
-          <Input v-model="email" type="text" autocomplete="username" required :label="t('login.identifier')" name="email" />
-          <Input v-model="password" type="password" autocomplete="current-password" required :label="t('common.password')" name="password" />
-          <Checkbox v-model="remember" :label="t('login.remember')" />
-          <p v-if="shownError" class="text-sm text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 rounded-md px-3 py-2" role="alert">
-            {{ shownError }}
-          </p>
-          <Button type="submit" :loading="auth.loading" :disabled="signInLocked" block>
-            <Lock class="h-4 w-4" />
-            {{ signInLocked ? t('login.retryIn', { time: lockTime }) : t('login.submit') }}
+        <!-- Optional sign-in form (hidden behind toggle) -->
+        <div v-if="showSignIn" class="mt-6 pt-5 border-t border-zinc-100 dark:border-zinc-800 text-left">
+          <div class="mb-3 text-center">
+            <h2 class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">{{ t('login.title') }}</h2>
+            <p class="text-[11px] text-zinc-400">{{ t('demo.adminHint') }}</p>
+          </div>
+          <form v-if="localEnabled" class="space-y-3" @submit.prevent="submit">
+            <Input
+              v-if="realmEnabled"
+              v-model="realm"
+              type="text"
+              autocomplete="organization"
+              :readonly="realmLocked"
+              :label="t('login.realm')"
+              :hint="realmLocked ? t('login.realmLocked', { realm: lockedRealm }) : t('login.realmHint')"
+              name="realm"
+            />
+            <Input v-model="email" type="text" autocomplete="username" required :label="t('login.identifier')" name="email" />
+            <Input v-model="password" type="password" autocomplete="current-password" required :label="t('common.password')" name="password" />
+            <Checkbox v-model="remember" :label="t('login.remember')" />
+            <p v-if="shownError" class="text-xs text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-500/10 rounded-md px-3 py-2" role="alert">
+              {{ shownError }}
+            </p>
+            <Button type="submit" :loading="auth.loading" :disabled="signInLocked" block class="mt-2">
+              <Lock class="h-4 w-4" />
+              {{ signInLocked ? t('login.retryIn', { time: lockTime }) : t('login.submit') }}
+            </Button>
+          </form>
+          <Button v-if="oidcEnabled" variant="outline" block class="mt-2" @click="startOidc()">
+            <Github class="h-4 w-4" />
+            {{ ssoLabel }}
           </Button>
-        </form>
-        <Button v-if="oidcEnabled" variant="outline" block class="mt-3" @click="startOidc()">
-          <Github class="h-4 w-4" />
-          {{ ssoLabel }}
-        </Button>
+        </div>
       </div>
 
-      <p class="mt-10 text-center text-xs text-zinc-500 dark:text-zinc-500 inline-flex items-center justify-center gap-1 w-full">
+      <p class="mt-6 text-center text-xs text-zinc-400 dark:text-zinc-600 inline-flex items-center justify-center gap-1 w-full">
         <Mail class="h-3 w-3" /> {{ productVersionLine(caps.data.release) }}
       </p>
     </div>
@@ -726,25 +673,14 @@ function startOidc(c?: LoginSSO) {
   width: 100%;
   align-items: center;
   justify-content: center;
-  /* See the template comment: the bottom padding is the install banner's
-     room, not a design choice. `--filex-install-banner-h` is what the banner
-     is actually standing on right now (InstallPrompt.vue publishes it, and
-     zeroes it when it is dismissed) — so the card sits dead centre, exactly
-     like the reference, the moment the banner is gone, and never has to guess
-     at a constant that was only ever right on the day it was written.
-     The top padding gives way first on a short viewport: the card cannot be
-     both centred and clear of a 300px banner on an 800px screen, and being
-     clear of it is what lets somebody sign in. */
-  padding: 40px 16px calc(var(--filex-install-banner-h, 0px) + 24px);
+  padding: 32px 16px calc(var(--filex-install-banner-h, 0px) + 24px);
   font-family: var(--fe-font);
   color: var(--fe-text);
-  /* The theme's sign-in ground: its own when it defines one, the palette's
-     sunken ground otherwise (core variables.css `--fe-login-ground`). */
-  background: var(--fe-login-ground);
+  background: var(--fe-login-ground, var(--fe-bg));
 }
 @media (max-height: 960px) {
   .lg {
-    padding-top: 12px;
+    padding-top: 16px;
   }
 }
 
@@ -753,70 +689,46 @@ function startOidc(c?: LoginSSO) {
   inset: 0;
   overflow: hidden;
   pointer-events: none;
+  background: radial-gradient(circle at 50% 25%, rgba(var(--fe-primary-rgb, 59, 130, 246), 0.04) 0%, transparent 60%);
 }
 .lg-deco__a,
 .lg-deco__b {
-  position: absolute;
-  display: block;
-  background: var(--fe-bg-selected);
-  transform: rotate(12deg);
-}
-.lg-deco__a {
-  top: -96px;
-  inset-inline-start: -96px;
-  height: 288px;
-  width: 288px;
-  border-radius: 64px;
-}
-.lg-deco__b {
-  inset-inline-end: -96px;
-  bottom: -128px;
-  height: 384px;
-  width: 384px;
-  border-radius: 80px;
+  display: none;
 }
 
 .lg-col {
   position: relative;
   width: 100%;
-  max-width: 672px;
+  max-width: 400px;
 }
 
 /* ── card ───────────────────────────────────────────────────────────── */
 .lg-card {
-  /* The vertical rhythm collapses on a short viewport. The full card is
-     taller than 800px screens leave once the fixed install banner has its
-     288px at the bottom, and a sign-in button under a banner is worse than a
-     tighter card. Measured, not guessed: at 1280x800 the banner's own box
-     starts at y=512 and the full-size card would put the submit's centre at
-     570. */
-  --lg-pad-y: 48px;
-  --lg-mark: 64px;
-  --lg-word: 44px;
-  --lg-title: 32px;
-  --lg-gap: 32px;
-  --lg-field-h: 60px;
+  --lg-pad-y: 36px;
+  --lg-mark: 42px;
+  --lg-word: 24px;
+  --lg-title: 22px;
+  --lg-gap: 20px;
+  --lg-field-h: 44px;
 
-  padding: var(--lg-pad-y) 32px;
-  border-radius: 20px;
-  background: var(--fe-login-card);
-  box-shadow: var(--fe-shadow);
+  padding: var(--lg-pad-y) 28px;
+  border-radius: 16px;
+  background: var(--fe-login-card, var(--fe-bg-elev));
+  border: 1px solid var(--fe-border);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02);
+  transition: all 0.2s ease;
 }
 @media (min-width: 640px) {
   .lg-card {
-    padding-inline-start: 88px;
-    padding-inline-end: 88px;
+    padding: var(--lg-pad-y) 32px;
   }
 }
-/* The short-viewport compaction lives in the unscoped block at the bottom of
-   this file — it has to reach an ancestor (<html>), which a scoped rule
-   cannot. */
 
 .lg-brand {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 12px;
 }
 .lg-brand__mark,
 .lg-brand__logo {
@@ -826,39 +738,39 @@ function startOidc(c?: LoginSSO) {
 }
 .lg-brand__logo {
   width: auto;
-  max-width: 220px;
+  max-width: 160px;
   object-fit: contain;
 }
 .lg-brand__word {
   min-width: 0;
   font-size: var(--lg-word);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.025em;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
   color: var(--fe-text);
   overflow-wrap: anywhere;
 }
 
 .lg-title {
-  margin: var(--lg-gap) 0 0;
+  margin: 16px 0 0;
   text-align: center;
   font-size: var(--lg-title);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.025em;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
   color: var(--fe-text);
 }
 .lg-subtitle {
-  margin: 12px 0 0;
+  margin: 6px 0 0;
   text-align: center;
-  font-size: var(--fe-text-md);
+  font-size: 13px;
   color: var(--fe-text-muted);
 }
 
 .lg-redirecting {
   margin: var(--lg-gap) 0 0;
   text-align: center;
-  font-size: var(--fe-text-md);
+  font-size: 13px;
   color: var(--fe-text-muted);
 }
 .lg-spinner {
@@ -870,7 +782,7 @@ function startOidc(c?: LoginSSO) {
   border: 2px solid currentColor;
   border-inline-end-color: transparent;
   border-radius: 999px;
-  opacity: 0.6;
+  opacity: 0.7;
   animation: lg-spin 0.7s linear infinite;
 }
 @keyframes lg-spin {
@@ -881,37 +793,36 @@ function startOidc(c?: LoginSSO) {
 
 /* ── form ───────────────────────────────────────────────────────────── */
 .lg-form {
-  margin-top: var(--lg-gap);
+  margin-top: 22px;
 }
-/* The realm sits above every way in (it decides the SSO buttons). */
 .lg-realm {
-  margin-top: var(--lg-gap);
+  margin-top: 16px;
 }
 
 .lg-label {
   display: block;
-  font-size: var(--fe-text-xs);
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--fe-text-muted);
 }
 .lg-label--next {
-  margin-top: 24px;
+  margin-top: 16px;
 }
 
 .lg-field {
-  margin-top: 8px;
+  margin-top: 6px;
   display: flex;
   align-items: center;
   height: var(--lg-field-h);
-  padding: 0 20px;
+  padding: 0 14px;
   border: 1px solid var(--fe-border);
-  border-radius: var(--fe-radius-md);
-  background: var(--fe-bg-hover);
+  border-radius: 10px;
+  background: var(--fe-bg);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 .lg-field--text {
   cursor: text;
 }
-/* The realm a tenant's own address fixes: shown, not editable. */
 .lg-field--locked {
   cursor: default;
   background: var(--fe-bg-elev);
@@ -922,7 +833,7 @@ function startOidc(c?: LoginSSO) {
 }
 .lg-field:focus-within {
   border-color: var(--fe-primary);
-  box-shadow: 0 0 0 1px var(--fe-primary);
+  box-shadow: 0 0 0 3px rgba(var(--fe-primary-rgb, 59, 130, 246), 0.12);
 }
 .lg-field__grow {
   display: flex;
@@ -933,23 +844,24 @@ function startOidc(c?: LoginSSO) {
   cursor: text;
 }
 .lg-field__icon {
-  height: 20px;
-  width: 20px;
+  height: 17px;
+  width: 17px;
   flex-shrink: 0;
   color: var(--fe-text-muted);
+  opacity: 0.8;
 }
 .lg-field__input {
-  margin-inline-start: 16px;
+  margin-inline-start: 10px;
   min-width: 0;
   flex: 1;
   border: 0;
   background: transparent;
   font-family: inherit;
-  font-size: var(--fe-text-md);
+  font-size: 14px;
   color: var(--fe-text);
 }
 .lg-field__input--pw {
-  margin-inline-end: 16px;
+  margin-inline-end: 8px;
 }
 .lg-field__input:focus {
   outline: none;
@@ -961,18 +873,20 @@ function startOidc(c?: LoginSSO) {
 .lg-eye {
   display: flex;
   flex-shrink: 0;
-  padding: 0;
+  padding: 4px;
   border: 0;
   background: none;
   color: var(--fe-text-muted);
   cursor: pointer;
+  border-radius: 6px;
+  transition: color 0.15s ease;
 }
 .lg-eye:hover {
   color: var(--fe-text);
 }
 
 .lg-2fa {
-  margin-top: 12px;
+  margin-top: 10px;
   text-align: end;
 }
 .lg-link {
@@ -980,17 +894,18 @@ function startOidc(c?: LoginSSO) {
   border: 0;
   background: none;
   font-family: inherit;
-  font-size: var(--fe-text-md);
+  font-size: 12px;
   color: var(--fe-primary);
   cursor: pointer;
+  transition: opacity 0.15s;
 }
 .lg-link:hover {
   text-decoration: underline;
 }
 
 .lg-hint {
-  margin: 6px 0 0;
-  font-size: var(--fe-text-xs);
+  margin: 5px 0 0;
+  font-size: 11px;
   color: var(--fe-text-muted);
 }
 
@@ -998,23 +913,25 @@ function startOidc(c?: LoginSSO) {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 24px;
-  font-size: var(--fe-text-md);
+  margin-top: 16px;
+  font-size: 13px;
   color: var(--fe-text);
   cursor: pointer;
+  user-select: none;
 }
 .lg-check__box {
   position: relative;
   display: inline-flex;
-  height: 20px;
-  width: 20px;
+  height: 17px;
+  width: 17px;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid var(--fe-border-strong);
-  border-radius: 5px;
+  border: 1px solid var(--fe-border-strong);
+  border-radius: 4px;
   background: var(--fe-bg);
   cursor: pointer;
+  transition: all 0.15s ease;
 }
 .lg-check__box.is-on {
   border-color: var(--fe-primary);
@@ -1022,31 +939,30 @@ function startOidc(c?: LoginSSO) {
   color: var(--fe-text-on-primary);
 }
 .lg-check__tick {
-  height: 14px;
-  width: 14px;
+  height: 12px;
+  width: 12px;
   stroke-width: 3;
 }
 
 .lg-alert {
-  margin: 20px 0 0;
+  margin: 16px 0 0;
   padding: 10px 12px;
   border: 1px solid var(--fe-danger);
-  border-radius: var(--fe-radius-sm);
+  border-radius: 8px;
   background: var(--fe-bg-elev);
-  font-size: var(--fe-text-md);
+  font-size: 13px;
   color: var(--fe-danger);
 }
 .lg-alert--form {
-  margin: 24px 0 0;
+  margin: 18px 0 0;
 }
-/* Same box as .lg-alert, in the page's quiet voice: news, not an error. */
 .lg-note {
-  margin: 20px 0 0;
+  margin: 16px 0 0;
   padding: 10px 12px;
   border: 1px solid var(--fe-border);
-  border-radius: var(--fe-radius-sm);
+  border-radius: 8px;
   background: var(--fe-bg-elev);
-  font-size: var(--fe-text-md);
+  font-size: 13px;
   color: var(--fe-text-muted);
 }
 .lg-alert code {
@@ -1057,27 +973,28 @@ function startOidc(c?: LoginSSO) {
 .lg-btn {
   display: inline-flex;
   width: 100%;
-  height: var(--fe-h-lg);
+  height: 42px;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  margin-top: 24px;
+  margin-top: 20px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: var(--fe-radius-md);
+  border-radius: 10px;
   font-family: inherit;
-  font-size: var(--fe-text-md);
+  font-size: 14px;
   font-weight: 500;
   line-height: 1;
   cursor: pointer;
   user-select: none;
+  transition: all 0.15s ease;
 }
 .lg-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 .lg-btn--sso {
-  margin-top: var(--lg-gap);
+  margin-top: 16px;
 }
 .lg-btn--primary {
   background: var(--fe-primary);
@@ -1090,36 +1007,37 @@ function startOidc(c?: LoginSSO) {
 }
 .lg-btn--outline {
   background: var(--fe-bg);
-  border-color: var(--fe-border-strong);
+  border-color: var(--fe-border);
   color: var(--fe-text);
 }
 .lg-btn--outline:hover:not(:disabled) {
   background: var(--fe-bg-hover);
+  border-color: var(--fe-border-strong);
 }
 
 .lg-or {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 20px 0;
+  margin: 18px 0;
 }
 .lg-or__line {
   flex: 1;
   border-top: 1px solid var(--fe-border);
 }
 .lg-or__word {
-  font-size: var(--fe-text-xs);
+  font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--fe-text-muted);
 }
 
 .lg-localhint {
-  margin-top: 20px;
+  margin-top: 18px;
   text-align: center;
 }
 .lg-localhint__link {
-  font-size: var(--fe-text-xs);
+  font-size: 12px;
   color: var(--fe-text-muted);
   text-decoration: none;
 }
@@ -1133,58 +1051,41 @@ function startOidc(c?: LoginSSO) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  margin: 24px 0 0;
-  font-size: var(--fe-text-xs);
+  gap: 6px;
+  margin: 20px 0 0;
+  font-size: 12px;
   color: var(--fe-text-muted);
+  opacity: 0.75;
 }
 
 .lg-i16 {
-  height: 16px;
-  width: 16px;
+  height: 15px;
+  width: 15px;
 }
 .lg-i18 {
+  height: 17px;
+  width: 17px;
+}
+.lg-i20 {
   height: 18px;
   width: 18px;
 }
-.lg-i20 {
-  height: 20px;
-  width: 20px;
-}
 
-/* The admin shell paints every focus ring in its own brand blue
-   (styles/main.css `@layer base`). On this page the accent is the product's
-   primary, so the ring follows it. */
 .lg :focus-visible {
   outline: 2px solid var(--fe-primary);
   outline-offset: 2px;
 }
 </style>
 
-<!-- ⚠ Unscoped on purpose, and this is the measured reason: Vue's scoped
-     transform compiles `:global(html.x) .lg-card` down to `html.x` alone — it
-     drops the descendant half. The rule then set the variables on <html>, where
-     `.lg-card`'s own declarations outranked them, and the card never changed
-     size. Measured on the dev server: the submit button stayed at y=552 at
-     1280x800 and the banner still covered it. The class name is the
-     component's own prefix, so an unscoped rule here reaches nothing else. -->
 <style>
-/* Only when the install banner is actually standing at the bottom of the
-   viewport (InstallPrompt.vue puts the class on <html> and takes it off when
-   the banner is dismissed). The card is the reference's size everywhere else,
-   including on a phone once the banner is gone — the compaction is the price
-   of the banner, not of the small screen.
-
-   Measured at 1280x800: the banner's box starts at y=500, and the full-size
-   card puts the submit button's centre at y=572. */
 @media (max-height: 880px) {
   html.filex-install-banner .lg-card {
-    --lg-pad-y: 28px;
-    --lg-mark: 44px;
-    --lg-word: 30px;
-    --lg-title: 24px;
-    --lg-gap: 18px;
-    --lg-field-h: 48px;
+    --lg-pad-y: 24px;
+    --lg-mark: 36px;
+    --lg-word: 22px;
+    --lg-title: 20px;
+    --lg-gap: 16px;
+    --lg-field-h: 40px;
   }
 }
 </style>

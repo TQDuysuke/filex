@@ -14,6 +14,22 @@
 
 services:
   # ---------------------------------------------------------------------
+  # Gateway (Reverse Proxy) — Unified domain routing for FileX + OnlyOffice
+  # ---------------------------------------------------------------------
+  gateway:
+    image: nginx:alpine
+    container_name: filex-gateway
+    restart: unless-stopped
+    ports:
+      - "${FILEX_PORT:-5212}:80"
+    volumes:
+      - ./docker/gateway.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - filex
+    networks:
+      - filex-net
+
+  # ---------------------------------------------------------------------
   # filex (slim) — default
   # ---------------------------------------------------------------------
   filex:
@@ -23,8 +39,8 @@ services:
     image: ${FILEX_IMAGE:-filex:custom}
     container_name: filex
     restart: unless-stopped
-    ports:
-      - "${FILEX_PORT:-5212}:5212"
+    expose:
+      - "5212"
     volumes:
       - ./data:/data
       - ./storage-local:/var/lib/filex/local-storage
@@ -62,6 +78,7 @@ services:
       # --- Plug & play services (URL = enabled) ---
       FILEX_ONLYOFFICE_URL: ${FILEX_ONLYOFFICE_URL:-}
       FILEX_ONLYOFFICE_JWT: ${FILEX_ONLYOFFICE_JWT:-}
+      FILEX_ONLYOFFICE_CALLBACK_URL: ${FILEX_ONLYOFFICE_CALLBACK_URL:-}
       FILEX_DRAWIO_URL: ${FILEX_DRAWIO_URL:-}
 
       # --- Security & Proxies ---
@@ -159,6 +176,7 @@ services:
       FILEX_THUMBS_ENABLED: "true"
       FILEX_ONLYOFFICE_URL: ${FILEX_ONLYOFFICE_URL:-}
       FILEX_ONLYOFFICE_JWT: ${FILEX_ONLYOFFICE_JWT:-}
+      FILEX_ONLYOFFICE_CALLBACK_URL: ${FILEX_ONLYOFFICE_CALLBACK_URL:-}
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:5212/healthz"]
       interval: 30s
@@ -185,6 +203,7 @@ services:
       JWT_HEADER: AuthorizationJwt
       USE_UNAUTHORIZED_STORAGE: "false"
     volumes:
+      - ./docker/onlyoffice-local.json:/etc/onlyoffice/documentserver/local-production-linux.json:ro
       - onlyoffice-data:/var/www/onlyoffice/Data
       - onlyoffice-logs:/var/log/onlyoffice
       - onlyoffice-cache:/var/lib/onlyoffice
